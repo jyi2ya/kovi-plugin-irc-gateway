@@ -1,7 +1,8 @@
-use kovi::tokio;
+use kovi::{serde_json, tokio};
 
+use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::Context;
 use futures::{Sink, SinkExt, Stream, StreamExt};
@@ -336,6 +337,49 @@ pub enum RenderedOnebotMessage {
     },
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EmojiInfo {
+    pub emoji_id: String,
+    pub describe: String,
+}
+
+static QQ_EMOJI_INFO: LazyLock<HashMap<String, EmojiInfo>> = LazyLock::new(|| {
+    // https://koishi.js.org/QFace/assets/qq_emoji/_index.json
+    let json = include_str!("../data/qq_emoji.json");
+    let decoded: Vec<EmojiInfo> = serde_json::from_str(json).unwrap();
+    let mut result = HashMap::new();
+    result.extend(
+        decoded
+            .into_iter()
+            .map(|item| (item.emoji_id.clone(), item)),
+    );
+    result
+});
+
+fn render_qq_array_message(messages: &kovi::Message) -> String {
+    // https://283375.github.io/onebot_v11_vitepress/message/segment.html
+    messages
+        .iter()
+        .map(|segment| match segment.type_.as_str() {
+            "text" => segment.data["text"].as_str().unwrap().to_owned(),
+            "face" => {
+                let id = segment.data["id"].as_str().unwrap().to_owned();
+                format!(
+                    "[face{}]",
+                    QQ_EMOJI_INFO
+                        .get(&id)
+                        .map(|info| info.describe.clone())
+                        .unwrap_or(id)
+                )
+            }
+            "at" => format!("[at:{}]", segment.data["qq"].as_str().unwrap()),
+            _ => format!("[{}]", segment.type_),
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 impl From<&kovi::MsgEvent> for RenderedOnebotMessage {
     fn from(value: &kovi::MsgEvent) -> Self {
         let sender_name = value
@@ -345,13 +389,19 @@ impl From<&kovi::MsgEvent> for RenderedOnebotMessage {
             .collect();
         if value.is_private() {
             Self::Private {
-                content: value.human_text.split('\n').map(str::to_owned).collect(),
+                content: render_qq_array_message(&value.message)
+                    .split('\n')
+                    .map(str::to_owned)
+                    .collect(),
                 sender_id: value.sender.user_id,
                 sender_name,
             }
         } else {
             Self::Group {
-                content: value.human_text.split('\n').map(str::to_owned).collect(),
+                content: render_qq_array_message(&value.message)
+                    .split('\n')
+                    .map(str::to_owned)
+                    .collect(),
                 sender_id: value.sender.user_id,
                 group_id: value.group_id.unwrap(),
                 sender_name,
