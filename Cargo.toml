@@ -1,0 +1,12 @@
+[package]
+name = "kovi-plugin-irc-gateway"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.99"
+futures = "0.3.31"
+irc-proto = "1.1.0"
+kovi = "0.12.5"
+serde = { version = "1.0.219", features = ["derive"] }
+tokio-util = "0.7.16"
