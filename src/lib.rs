@@ -294,20 +294,22 @@ async fn handle_irc_connection(
     let (irc_tx, irc_rx) = irc_conn.split();
     let irc_tx = Arc::new(Mutex::new(irc_tx));
     let shutdown_token = CancellationToken::new();
-    let _shutdown_after_return = shutdown_token.drop_guard_ref();
-    tokio::select! {
-        _ = tokio::spawn(handle_irc_messages(
-                irc_rx,
-                irc_tx.clone(),
-                bot,
-                shutdown_token.clone(),
-        )) => (),
-        _ = tokio::spawn(handle_onebot_messages(
-                onebot_rx,
-                irc_tx.clone(),
-                shutdown_token.clone(),
-        )) => (),
-    };
+    let irc_message_thread = tokio::spawn(handle_irc_messages(
+        irc_rx,
+        irc_tx.clone(),
+        bot,
+        shutdown_token.clone(),
+    ));
+    let onebot_message_thread = tokio::spawn(handle_onebot_messages(
+        onebot_rx,
+        irc_tx.clone(),
+        shutdown_token.clone(),
+    ));
+    let _ = irc_message_thread.await.unwrap();
+    log::info!("irc thread terminated");
+    shutdown_token.cancel();
+    let _ = onebot_message_thread.await.unwrap();
+    log::info!("onebot thread terminated");
 }
 
 async fn irc_server_main(
@@ -427,7 +429,7 @@ async fn main() {
     .unwrap();
     let config = kovi::utils::load_toml_data(default_config, config_path).unwrap();
 
-    let (broadcast_tx, _broadcast_rx) = tokio::sync::broadcast::channel(16);
+    let (broadcast_tx, _) = tokio::sync::broadcast::channel(16);
     let _irc = kovi::spawn(irc_server_main(config.bind_addr, broadcast_tx.clone(), bot));
 
     let broadcast_tx = Arc::new(broadcast_tx);
@@ -435,9 +437,8 @@ async fn main() {
     kovi::PluginBuilder::on_msg(move |event| {
         let broadcast_tx = Arc::clone(&broadcast_tx);
         async move {
-            broadcast_tx
-                .send(RenderedOnebotMessage::from(event.as_ref()))
-                .unwrap();
+            // send error occurs only when there are no listeners.
+            let _ = broadcast_tx.send(RenderedOnebotMessage::from(event.as_ref()));
         }
     })
 }
