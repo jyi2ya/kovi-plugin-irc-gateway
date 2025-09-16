@@ -429,7 +429,7 @@ async fn main() {
     .unwrap();
     let config = kovi::utils::load_toml_data(default_config, config_path).unwrap();
 
-    let (broadcast_tx, _) = tokio::sync::broadcast::channel(16);
+    let broadcast_tx = tokio::sync::broadcast::Sender::new(16);
     let _irc = kovi::spawn(irc_server_main(config.bind_addr, broadcast_tx.clone(), bot));
 
     let broadcast_tx = Arc::new(broadcast_tx);
