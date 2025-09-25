@@ -6,7 +6,9 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.99"
 futures = "0.3.31"
+image = { version = "=0.24.6", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "webp", "png", "pnm", "tiff"] }
 irc-proto = "1.1.0"
 kovi = "0.12.5"
+rascii_art = { version = "0.4.5", default-features = false }
 serde = { version = "1.0.219", features = ["derive"] }
 tokio-util = "0.7.16"

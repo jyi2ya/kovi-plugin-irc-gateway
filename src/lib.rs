@@ -359,11 +359,10 @@ static QQ_EMOJI_INFO: LazyLock<HashMap<String, EmojiInfo>> = LazyLock::new(|| {
     result
 });
 
-fn render_qq_array_message(messages: &kovi::Message) -> String {
+async fn render_qq_array_message(messages: &kovi::Message, bot: Arc<kovi::RuntimeBot>) -> String {
     // https://283375.github.io/onebot_v11_vitepress/message/segment.html
-    messages
-        .iter()
-        .map(|segment| match segment.type_.as_str() {
+    futures::stream::iter(messages.iter().cloned())
+        .map(async |segment| match segment.type_.as_str() {
             "text" => segment.data["text"].as_str().unwrap().to_owned(),
             "face" => {
                 let id = segment.data["id"].as_str().unwrap().to_owned();
@@ -375,15 +374,45 @@ fn render_qq_array_message(messages: &kovi::Message) -> String {
                         .unwrap_or(id)
                 )
             }
+            "image" => {
+                let file = segment.data["file"].as_str().unwrap();
+                let path = match bot.get_image(file).await {
+                    Ok(info) => info.data["file"].as_str().unwrap().to_owned(),
+                    Err(err) => return format!("[CANT FETCH IAMGE INFO: {err}]"),
+                };
+                log::info!("image path: {path}");
+                let image_reader = match image::io::Reader::open(path) {
+                    Ok(reader) => reader,
+                    Err(err) => return format!("[CANT OPEN IMAGE: {err}]"),
+                };
+                let image_data = match image_reader.with_guessed_format() {
+                    Ok(data) => data,
+                    Err(err) => return format!("[CANT READ IMAGE: {err}]"),
+                };
+                let image = match image_data.decode() {
+                    Ok(image) => image,
+                    Err(err) => return format!("[CANT PARSE IMAGE: {err}]"),
+                };
+                let mut buf = String::new();
+                let render_options = rascii_art::RenderOptions::default()
+                    .height(15)
+                    .colored(true);
+                if let Err(err) = rascii_art::render_image_to(&image, &mut buf, &render_options) {
+                    return format!("[CANT RENDER IMAGE: {err}]");
+                };
+                format!("\n{buf}\n")
+            }
             "at" => format!("[at:{}]", segment.data["qq"].as_str().unwrap()),
             _ => format!("[{}]", segment.type_),
         })
+        .buffered(16)
         .collect::<Vec<_>>()
+        .await
         .join("")
 }
 
-impl From<&kovi::MsgEvent> for RenderedOnebotMessage {
-    fn from(value: &kovi::MsgEvent) -> Self {
+impl RenderedOnebotMessage {
+    pub async fn from_msg_event(value: &kovi::MsgEvent, bot: Arc<kovi::RuntimeBot>) -> Self {
         let sender_name = value
             .get_sender_nickname()
             .chars()
@@ -391,7 +420,8 @@ impl From<&kovi::MsgEvent> for RenderedOnebotMessage {
             .collect();
         if value.is_private() {
             Self::Private {
-                content: render_qq_array_message(&value.message)
+                content: render_qq_array_message(&value.message, bot)
+                    .await
                     .split('\n')
                     .map(str::to_owned)
                     .collect(),
@@ -400,7 +430,8 @@ impl From<&kovi::MsgEvent> for RenderedOnebotMessage {
             }
         } else {
             Self::Group {
-                content: render_qq_array_message(&value.message)
+                content: render_qq_array_message(&value.message, bot)
+                    .await
                     .split('\n')
                     .map(str::to_owned)
                     .collect(),
@@ -430,15 +461,21 @@ async fn main() {
     let config = kovi::utils::load_toml_data(default_config, config_path).unwrap();
 
     let broadcast_tx = tokio::sync::broadcast::Sender::new(16);
-    let _irc = kovi::spawn(irc_server_main(config.bind_addr, broadcast_tx.clone(), bot));
+    let _irc = kovi::spawn(irc_server_main(
+        config.bind_addr,
+        broadcast_tx.clone(),
+        Arc::clone(&bot),
+    ));
 
     let broadcast_tx = Arc::new(broadcast_tx);
 
     kovi::PluginBuilder::on_msg(move |event| {
         let broadcast_tx = Arc::clone(&broadcast_tx);
+        let bot = Arc::clone(&bot);
         async move {
+            let rendered = RenderedOnebotMessage::from_msg_event(event.as_ref(), bot).await;
             // send error occurs only when there are no listeners.
-            let _ = broadcast_tx.send(RenderedOnebotMessage::from(event.as_ref()));
+            let _ = broadcast_tx.send(rendered);
         }
     })
 }
