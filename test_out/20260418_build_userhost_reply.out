@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_USERHOST, ["nick", "alice=+alice@onebotirc.villv.tech bob=+bob@onebotirc.villv.tech"]) }]

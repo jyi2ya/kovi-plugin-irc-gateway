@@ -1,0 +1,1 @@
+[ParsedChannel { raw: "#12345", group_id: Some(12345) }, ParsedChannel { raw: "#67890", group_id: Some(67890) }]

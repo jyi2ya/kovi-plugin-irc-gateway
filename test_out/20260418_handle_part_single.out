@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(Nickname("nick", "user", "onebotirc.villv.tech")), command: PART("#12345", None) }]

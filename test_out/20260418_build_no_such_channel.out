@@ -1,0 +1,1 @@
+Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(ERR_NOSUCHCHANNEL, ["nick", "#abc", "No such channel"]) }

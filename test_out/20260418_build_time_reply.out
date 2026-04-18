@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_TIME, ["nick", "onebotirc.villv.tech", "2024-06-15T12:30:00Z"]) }]

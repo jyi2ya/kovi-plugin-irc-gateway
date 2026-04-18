@@ -1,0 +1,1 @@
+[SetNick("mynick"), SetRegState(Pending { got_nick: true, got_user: true })]

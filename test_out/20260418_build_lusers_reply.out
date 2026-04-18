@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_LUSERCLIENT, ["nick", "There is 1 user on 1 server"]) }, Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_LUSERME, ["nick", "I have 1 client and 0 servers"]) }]

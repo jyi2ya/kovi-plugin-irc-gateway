@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: PONG("server1", Some("server2")) }]

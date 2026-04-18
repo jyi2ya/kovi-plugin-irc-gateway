@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_VERSION, ["nick", "kovi-irc-gateway-0.1", "onebotirc.villv.tech", "QQ IRC Gateway"]) }]
