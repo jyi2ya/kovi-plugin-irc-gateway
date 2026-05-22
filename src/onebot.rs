@@ -58,7 +58,7 @@ fn rvs_render_pure_segment(
             let id = data["id"].as_str().unwrap_or("").to_owned();
             Some(format!("[face:{}]", rvs_lookup_emoji_name(emoji_map, &id)))
         }
-        "image" | "at" => None,
+        "image" | "at" | "reply" => None,
         _ => Some(format!("[{type_}]")),
     }
 }
@@ -81,6 +81,7 @@ pub async fn rvs_render_qq_array_message_ABEISP(
             }
             match segment.type_.as_str() {
                 "image" => rvs_render_image_segment_ABEIP(&segment, &bot, image_mode).await,
+                "reply" => rvs_render_reply_segment_AIP(&segment, group_id, &bot).await,
                 "at" => {
                     let qq = segment.data["qq"].as_str().unwrap_or("?");
                     rvs_render_at_mention_AEIP(qq, group_id, &bot).await
@@ -92,6 +93,62 @@ pub async fn rvs_render_qq_array_message_ABEISP(
         .collect::<Vec<_>>()
         .await
         .join("")
+}
+
+#[allow(non_snake_case)]
+async fn rvs_render_reply_segment_AIP(
+    segment: &kovi::bot::message::Segment,
+    group_id: Option<i64>,
+    bot: &kovi::RuntimeBot,
+) -> String {
+    let message_id: i32 = segment.data["id"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    if message_id == 0 {
+        return "[reply]".to_owned();
+    }
+    let info = match bot.get_msg(message_id).await {
+        Ok(info) => info,
+        Err(_) => return "[reply]".to_owned(),
+    };
+    let sender_id = match info.data["sender"]["user_id"].as_i64() {
+        Some(id) => id,
+        None => return "[reply]".to_owned(),
+    };
+    let sender_nick = match group_id {
+        Some(gid) => bot
+            .get_group_member_info(gid, sender_id, false)
+            .await
+            .ok()
+            .and_then(|m| rvs_extract_group_sender_name(&m))
+            .unwrap_or_else(|| sender_id.to_string()),
+        None => bot
+            .get_stranger_info(sender_id, false)
+            .await
+            .ok()
+            .and_then(|m| m.data["nickname"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| sender_id.to_string()),
+    };
+    let sanitized = rvs_sanitize_nick(&sender_nick);
+    rvs_pick_sender_name(&sanitized, sender_id)
+        + ": "
+        + &rvs_reply_content_hint(&info)
+}
+
+#[allow(non_snake_case)]
+fn rvs_reply_content_hint(info: &kovi::ApiReturn) -> String {
+    let text = info.data["raw_message"]
+        .as_str()
+        .unwrap_or("")
+        .chars()
+        .take(20)
+        .collect::<String>();
+    if text.is_empty() {
+        "...".to_owned()
+    } else {
+        format!("{text}...")
+    }
 }
 
 #[allow(non_snake_case)]
