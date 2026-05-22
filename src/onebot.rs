@@ -46,7 +46,11 @@ fn rvs_lookup_emoji_name<'a>(emoji_map: &'a HashMap<String, EmojiInfo>, id: &'a 
 }
 
 #[allow(non_snake_case)]
-fn rvs_render_pure_segment(emoji_map: &HashMap<String, EmojiInfo>, type_: &str, data: &serde_json::Value) -> Option<String> {
+fn rvs_render_pure_segment(
+    emoji_map: &HashMap<String, EmojiInfo>,
+    type_: &str,
+    data: &serde_json::Value,
+) -> Option<String> {
     match type_ {
         "text" => Some(data["text"].as_str().unwrap_or("").to_owned()),
         "face" => {
@@ -59,7 +63,7 @@ fn rvs_render_pure_segment(emoji_map: &HashMap<String, EmojiInfo>, type_: &str, 
 }
 
 #[allow(non_snake_case)]
-pub async fn rvs_render_qq_array_message_AEIP(
+pub async fn rvs_render_qq_array_message_ABEISP(
     messages: &kovi::Message,
     bot: Arc<kovi::RuntimeBot>,
     group_id: Option<i64>,
@@ -68,11 +72,13 @@ pub async fn rvs_render_qq_array_message_AEIP(
 
     stream::iter(messages.iter().cloned())
         .map(async |segment| {
-            if let Some(rendered) = rvs_render_pure_segment(&QQ_EMOJI_INFO, &segment.type_, &segment.data) {
+            if let Some(rendered) =
+                rvs_render_pure_segment(&QQ_EMOJI_INFO, &segment.type_, &segment.data)
+            {
                 return rendered;
             }
             match segment.type_.as_str() {
-                "image" => rvs_render_image_segment_AEIP(&segment, &bot).await,
+                "image" => rvs_render_image_segment_ABEIP(&segment, &bot).await,
                 "at" => {
                     let qq = segment.data["qq"].as_str().unwrap_or("?");
                     rvs_render_at_mention_AEIP(qq, group_id, &bot).await
@@ -87,7 +93,7 @@ pub async fn rvs_render_qq_array_message_AEIP(
 }
 
 #[allow(non_snake_case)]
-async fn rvs_render_image_segment_AEIP(
+async fn rvs_render_image_segment_ABEIP(
     segment: &kovi::bot::message::Segment,
     bot: &kovi::RuntimeBot,
 ) -> String {
@@ -103,11 +109,11 @@ async fn rvs_render_image_segment_AEIP(
         Err(err) => return format!("[image:fetch-error:{err}]"),
     };
     log::info!("image path: {path}");
-    rvs_render_image_to_ascii_E(&path)
+    rvs_render_image_to_ascii_BIP(&path)
 }
 
 #[allow(non_snake_case)]
-fn rvs_render_ascii_art_E(image: &image::DynamicImage) -> String {
+fn rvs_render_ascii_art_EIP(image: &image::DynamicImage) -> String {
     let mut buf = String::new();
     let render_options = rascii_art::RenderOptions::default()
         .height(15)
@@ -119,7 +125,7 @@ fn rvs_render_ascii_art_E(image: &image::DynamicImage) -> String {
 }
 
 #[allow(non_snake_case)]
-fn rvs_render_image_to_ascii_E(path: &str) -> String {
+fn rvs_render_image_to_ascii_BIP(path: &str) -> String {
     let image_reader = match image::io::Reader::open(path) {
         Ok(reader) => reader,
         Err(err) => return format!("[image:open-error:{err}]"),
@@ -132,7 +138,7 @@ fn rvs_render_image_to_ascii_E(path: &str) -> String {
         Ok(image) => image,
         Err(err) => return format!("[image:decode-error:{err}]"),
     };
-    rvs_render_ascii_art_E(&image)
+    rvs_render_ascii_art_EIP(&image)
 }
 
 #[allow(non_snake_case)]
@@ -214,7 +220,7 @@ pub fn rvs_split_lines(content: &str) -> Vec<String> {
 
 impl RenderedOnebotMessage {
     #[allow(non_snake_case)]
-    pub async fn rvs_from_msg_event_AEIP(
+    pub async fn rvs_from_msg_event_ABEISP(
         value: &kovi::MsgEvent,
         bot: Arc<kovi::RuntimeBot>,
     ) -> Self {
@@ -224,7 +230,7 @@ impl RenderedOnebotMessage {
                 value.sender.user_id,
             );
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_AEIP(&value.message, Arc::clone(&bot), None).await,
+                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), None).await,
             );
             Self::Private {
                 content,
@@ -240,7 +246,7 @@ impl RenderedOnebotMessage {
                 .and_then(|info| rvs_extract_group_sender_name(&info))
                 .unwrap_or_else(|| value.sender.user_id.to_string());
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_AEIP(&value.message, Arc::clone(&bot), Some(gid))
+                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), Some(gid))
                     .await,
             );
             Self::Group {
@@ -275,14 +281,23 @@ mod tests {
         let data = serde_json::json!({});
         let result = rvs_render_pure_segment(&HashMap::new(), "text", &data);
         assert_eq!(result, Some("".to_owned()));
-        snapshot("20260418_render_pure_segment_text_empty", &format!("{result:?}"));
+        snapshot(
+            "20260418_render_pure_segment_text_empty",
+            &format!("{result:?}"),
+        );
     }
 
     #[test]
     fn test_20260418_render_pure_segment_face() {
         let data = serde_json::json!({"id": "178"});
         let mut map = HashMap::new();
-        map.insert("178".to_owned(), EmojiInfo { emoji_id: "178".to_owned(), describe: "微笑".to_owned() });
+        map.insert(
+            "178".to_owned(),
+            EmojiInfo {
+                emoji_id: "178".to_owned(),
+                describe: "微笑".to_owned(),
+            },
+        );
         let result = rvs_render_pure_segment(&map, "face", &data);
         assert_eq!(result, Some("[face:微笑]".to_owned()));
         snapshot("20260418_render_pure_segment_face", &format!("{result:?}"));
@@ -293,7 +308,10 @@ mod tests {
         let data = serde_json::json!({"id": "999"});
         let result = rvs_render_pure_segment(&HashMap::new(), "face", &data);
         assert_eq!(result, Some("[face:999]".to_owned()));
-        snapshot("20260418_render_pure_segment_face_missing", &format!("{result:?}"));
+        snapshot(
+            "20260418_render_pure_segment_face_missing",
+            &format!("{result:?}"),
+        );
     }
 
     #[test]
@@ -317,6 +335,9 @@ mod tests {
         let data = serde_json::json!({});
         let result = rvs_render_pure_segment(&HashMap::new(), "record", &data);
         assert_eq!(result, Some("[record]".to_owned()));
-        snapshot("20260418_render_pure_segment_unknown", &format!("{result:?}"));
+        snapshot(
+            "20260418_render_pure_segment_unknown",
+            &format!("{result:?}"),
+        );
     }
 }

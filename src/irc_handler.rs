@@ -163,7 +163,7 @@ async fn rvs_execute_irc_effects_ABEIMP(
                 replies.extend(rvs_handle_join_ABEIP(nick, user, &chanlist, bot).await);
             }
             IrcCommandEffect::SendPrivmsg { target, text } => {
-                rvs_handle_privmsg_P(&target, &text, bot);
+                rvs_handle_privmsg_IP(&target, &text, bot);
             }
             IrcCommandEffect::LogDebug(msg) => log::debug!("{}", msg),
         }
@@ -183,7 +183,16 @@ async fn rvs_dispatch_irc_command_ABEIMP(
 ) -> Vec<Message> {
     let now_str = rvs_make_now_str_P();
     let effects = rvs_plan_irc_command(command, nick, user, reg_state, *cap_negotiating, &now_str);
-    rvs_execute_irc_effects_ABEIMP(effects, nick, user, reg_state, cap_negotiating, nick_tx, bot).await
+    rvs_execute_irc_effects_ABEIMP(
+        effects,
+        nick,
+        user,
+        reg_state,
+        cap_negotiating,
+        nick_tx,
+        bot,
+    )
+    .await
 }
 
 #[allow(non_snake_case)]
@@ -225,7 +234,7 @@ async fn rvs_handle_join_ABEIP(
 }
 
 #[allow(non_snake_case)]
-fn rvs_handle_privmsg_P(target: &str, text: &str, bot: &Arc<kovi::RuntimeBot>) {
+fn rvs_handle_privmsg_IP(target: &str, text: &str, bot: &Arc<kovi::RuntimeBot>) {
     match rvs_resolve_privmsg_target(target) {
         PrivmsgTarget::Group(group_id) => {
             bot.send_group_msg(group_id, text.to_owned());
@@ -337,12 +346,18 @@ fn rvs_render_onebot_to_irc(message: RenderedOnebotMessage, my_nick: &str) -> Ve
 
 #[allow(non_snake_case)]
 pub async fn rvs_handle_irc_connection_ABEIMP(
-    conn: tokio::net::TcpStream,
+    conn: tokio_listener::Connection,
     onebot_rx: tokio::sync::broadcast::Receiver<RenderedOnebotMessage>,
     bot: Arc<kovi::RuntimeBot>,
 ) {
-    let codec = irc_proto::IrcCodec::new("utf-8")
-        .expect("utf-8 is always a valid encoding");
+    let conn = match conn.try_into_tcp() {
+        Ok(conn) => conn,
+        Err(conn) => {
+            log::error!("unsupported connection type: {:?}", conn);
+            return;
+        }
+    };
+    let codec = irc_proto::IrcCodec::new("utf-8").expect("utf-8 is always a valid encoding");
     let irc_conn = codec.framed(conn);
     let (irc_tx, irc_rx) = irc_conn.split();
     let irc_tx = Arc::new(Mutex::new(irc_tx));
@@ -395,7 +410,10 @@ mod tests {
         assert_eq!(channels.len(), 1);
         assert_eq!(channels[0].raw, "#12345");
         assert_eq!(channels[0].group_id, Some(12345));
-        snapshot("20260418_parse_join_channels_single", &format!("{:?}", channels));
+        snapshot(
+            "20260418_parse_join_channels_single",
+            &format!("{:?}", channels),
+        );
     }
 
     #[test]
@@ -404,7 +422,10 @@ mod tests {
         assert_eq!(channels.len(), 2);
         assert_eq!(channels[0].group_id, Some(12345));
         assert_eq!(channels[1].group_id, Some(67890));
-        snapshot("20260418_parse_join_channels_multiple", &format!("{:?}", channels));
+        snapshot(
+            "20260418_parse_join_channels_multiple",
+            &format!("{:?}", channels),
+        );
     }
 
     #[test]
@@ -414,7 +435,10 @@ mod tests {
         assert_eq!(channels[0].group_id, None);
         assert_eq!(channels[0].raw, "#abc");
         assert_eq!(channels[1].group_id, Some(12345));
-        snapshot("20260418_parse_join_channels_invalid", &format!("{:?}", channels));
+        snapshot(
+            "20260418_parse_join_channels_invalid",
+            &format!("{:?}", channels),
+        );
     }
 
     #[test]
@@ -432,7 +456,10 @@ mod tests {
         assert_eq!(channels.len(), 1);
         assert_eq!(channels[0].group_id, Some(12345));
         assert_eq!(channels[0].raw, "12345");
-        snapshot("20260418_parse_join_channels_no_hash", &format!("{:?}", channels));
+        snapshot(
+            "20260418_parse_join_channels_no_hash",
+            &format!("{:?}", channels),
+        );
     }
 
     #[test]
@@ -443,7 +470,10 @@ mod tests {
         assert_eq!(lookups.len(), 2);
         assert_eq!(lookups[0], ("#111".to_owned(), 111));
         assert_eq!(lookups[1], ("#222".to_owned(), 222));
-        snapshot("20260418_plan_join_effects_all_valid", &format!("{lookups:?}"));
+        snapshot(
+            "20260418_plan_join_effects_all_valid",
+            &format!("{lookups:?}"),
+        );
     }
 
     #[test]
@@ -453,7 +483,10 @@ mod tests {
         assert_eq!(replies.len(), 1);
         assert_eq!(lookups.len(), 1);
         assert_eq!(lookups[0].1, 123);
-        snapshot("20260418_plan_join_effects_mixed", &format!("replies={replies:?}, lookups={lookups:?}"));
+        snapshot(
+            "20260418_plan_join_effects_mixed",
+            &format!("replies={replies:?}, lookups={lookups:?}"),
+        );
     }
 
     #[test]
@@ -462,7 +495,10 @@ mod tests {
         let (replies, lookups) = rvs_plan_join_effects(&channels, "nick");
         assert_eq!(replies.len(), 2);
         assert!(lookups.is_empty());
-        snapshot("20260418_plan_join_effects_all_invalid", &format!("{replies:?}"));
+        snapshot(
+            "20260418_plan_join_effects_all_invalid",
+            &format!("{replies:?}"),
+        );
     }
 
     #[test]

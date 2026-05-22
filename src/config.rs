@@ -1,13 +1,22 @@
+use tokio_listener::{ListenerAddress, UserOptions};
+
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Config {
-    pub bind_addr: std::net::SocketAddr,
+    #[serde(default = "rvs_default_bind_addr")]
+    pub bind_addr: ListenerAddress,
+    #[serde(default)]
+    pub user_options: UserOptions,
+}
+
+fn rvs_default_bind_addr() -> ListenerAddress {
+    "0.0.0.0:8621".parse().unwrap()
 }
 
 impl Default for Config {
     fn default() -> Self {
-        use std::net::{IpAddr, Ipv4Addr, SocketAddr};
         Self {
-            bind_addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 8621),
+            bind_addr: rvs_default_bind_addr(),
+            user_options: UserOptions::default(),
         }
     }
 }

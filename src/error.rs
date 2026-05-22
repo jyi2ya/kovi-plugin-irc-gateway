@@ -3,9 +3,8 @@ pub enum IrcGatewayError {
     #[error("irc connection broken")]
     ConnectionBroken(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("failed to bind irc server to {addr}")]
+    #[error("failed to bind irc server")]
     BindFailed {
-        addr: std::net::SocketAddr,
         #[source]
         source: std::io::Error,
     },

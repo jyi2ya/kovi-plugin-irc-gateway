@@ -78,29 +78,32 @@ IrcCommandEffect::AsyncJoin=
 IrcCommandEffect::SendPrivmsg=
 IrcCommandEffect::LogDebug=
 
-# image/rascii_art - pure or E (may fail)
-image::io::Reader::open=E
-with_guessed_format=E
-decode=E
+# image/rascii_art - pure or may fail (P)
+image::io::Reader::open=IP
+image::io::Reader::with_guessed_format=IP
+image::io::Reader::decode=IP
 rascii_art::RenderOptions::default=
-rascii_art::render_image_to=E
+rascii_art::render_image_to=IP
+image::reader::Reader::open=IP
+image::reader::Reader::with_guessed_format=IP
+image::reader::Reader::decode=IP
 stream::iter=
 
 # kovi API - async, blocking, fallible, IO, impure
 kovi::PluginBuilder::get_runtime_bot=ABIP
 kovi::PluginBuilder::on_msg=ABIP
 kovi::spawn=AP
-kovi::utils::load_toml_data=BEIP
+kovi::utils::load_toml_data=BIP
 kovi::tokio::sync::broadcast::Sender::new=
 get_data_path=P
 get_sender_nickname=P
 is_private=
-get_group_info=AEIP
-get_group_member_info=AEIP
-get_image=AEIP
-get_stranger_info=AEIP
-send_group_msg=P
-send_private_msg=P
+get_group_info=AIP
+get_group_member_info=AIP
+get_image=AIP
+get_stranger_info=AIP
+kovi::RuntimeBot::send_group_msg=IP
+kovi::RuntimeBot::send_private_msg=IP
 
 # tokio - async, IO
 tokio::net::TcpListener::bind=ABI
@@ -110,5 +113,22 @@ SystemTime::now=P
 duration_since=
 get=
 
+# tokio-listener - async, blocking, I/O
+tokio_listener::Listener::bind=ABIP
+Listener::accept=ABI
+try_into_tcp=I
+
 # Self references
 Self::ConnectionBroken=
+
+# ─── 非结构化 spawn 函数（并发 goto）─────────────────────────
+# spawn 创建的后台任务不受调用方作用域约束，容易导致资源泄漏、错误丢失。
+# 应改用 join!、JoinSet、FuturesUnordered、thread::scope 等结构化并发原语。
+tokio::task::spawn=AS
+tokio::task::spawn_blocking=BIS
+tokio::task::spawn_local=AST
+std::thread::spawn=BS
+std::thread::Builder::spawn=BUS
+async_std::task::spawn=AS
+async_std::task::spawn_blocking=BIS
+smol::spawn=AS

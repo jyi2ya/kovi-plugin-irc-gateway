@@ -154,7 +154,10 @@ pub fn rvs_build_welcome_burst(nick: &str, now_str: &str) -> Vec<Message> {
         ),
         rvs_server_reply(
             Response::RPL_CREATED,
-            vec![nick.to_owned(), format!("This server was created {now_str}")],
+            vec![
+                nick.to_owned(),
+                format!("This server was created {now_str}"),
+            ],
         ),
         rvs_server_reply(
             Response::RPL_MYINFO,
@@ -305,7 +308,11 @@ pub fn rvs_build_join_reply(
         ),
         rvs_server_reply(
             Response::RPL_ENDOFNAMES,
-            vec![nick.to_owned(), chan.clone(), "End of /NAMES list.".to_owned()],
+            vec![
+                nick.to_owned(),
+                chan.clone(),
+                "End of /NAMES list.".to_owned(),
+            ],
         ),
     ]
 }
@@ -323,7 +330,12 @@ pub fn rvs_build_no_such_channel(nick: &str, channel: &str) -> Message {
 }
 
 #[allow(non_snake_case)]
-pub fn rvs_build_part_broadcast(nick: &str, user: &str, channel: &str, comment: Option<String>) -> Message {
+pub fn rvs_build_part_broadcast(
+    nick: &str,
+    user: &str,
+    channel: &str,
+    comment: Option<String>,
+) -> Message {
     rvs_prefixed(
         rvs_nick_prefix(nick, user),
         Message::from(Command::PART(channel.to_owned(), comment)),
@@ -334,7 +346,11 @@ pub fn rvs_build_part_broadcast(nick: &str, user: &str, channel: &str, comment: 
 pub fn rvs_build_who_end(nick: &str, mask: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFWHO,
-        vec![nick.to_owned(), mask.to_owned(), "End of /WHO list.".to_owned()],
+        vec![
+            nick.to_owned(),
+            mask.to_owned(),
+            "End of /WHO list.".to_owned(),
+        ],
     )]
 }
 
@@ -363,7 +379,11 @@ pub fn rvs_build_whois_reply(nick: &str, user: &str, mask: &str) -> Vec<Message>
         ),
         rvs_server_reply(
             Response::RPL_ENDOFWHOIS,
-            vec![nick.to_owned(), mask.to_owned(), "End of /WHOIS list.".to_owned()],
+            vec![
+                nick.to_owned(),
+                mask.to_owned(),
+                "End of /WHOIS list.".to_owned(),
+            ],
         ),
     ]
 }
@@ -372,7 +392,11 @@ pub fn rvs_build_whois_reply(nick: &str, user: &str, mask: &str) -> Vec<Message>
 pub fn rvs_build_whowas_end(nick: &str, nicklist: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFWHOWAS,
-        vec![nick.to_owned(), nicklist.to_owned(), "End of WHOWAS.".to_owned()],
+        vec![
+            nick.to_owned(),
+            nicklist.to_owned(),
+            "End of WHOWAS.".to_owned(),
+        ],
     )]
 }
 
@@ -416,7 +440,11 @@ pub fn rvs_build_no_topic(nick: &str, channel: String) -> Vec<Message> {
 pub fn rvs_build_names_end(nick: &str, chan: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFNAMES,
-        vec![nick.to_owned(), chan.to_owned(), "End of /NAMES list.".to_owned()],
+        vec![
+            nick.to_owned(),
+            chan.to_owned(),
+            "End of /NAMES list.".to_owned(),
+        ],
     )]
 }
 
@@ -455,7 +483,11 @@ pub fn rvs_build_version_reply(nick: &str) -> Vec<Message> {
 pub fn rvs_build_time_reply(nick: &str, now_str: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_TIME,
-        vec![nick.to_owned(), rvs_server_name().to_owned(), now_str.to_owned()],
+        vec![
+            nick.to_owned(),
+            rvs_server_name().to_owned(),
+            now_str.to_owned(),
+        ],
     )]
 }
 
@@ -522,14 +554,24 @@ pub fn rvs_build_away_replies(nick: &str, msg: Option<&String>) -> Vec<Message> 
 }
 
 #[allow(non_snake_case)]
-pub fn rvs_handle_part(nick: &str, user: &str, chanlist: &str, comment: &Option<String>) -> Vec<Message> {
+pub fn rvs_handle_part(
+    nick: &str,
+    user: &str,
+    chanlist: &str,
+    comment: &Option<String>,
+) -> Vec<Message> {
     let mut reply = Vec::new();
     for channel in chanlist.split(',') {
         let channel = channel.trim();
         if channel.is_empty() {
             continue;
         }
-        reply.push(rvs_build_part_broadcast(nick, user, channel, comment.clone()));
+        reply.push(rvs_build_part_broadcast(
+            nick,
+            user,
+            channel,
+            comment.clone(),
+        ));
     }
     reply
 }
@@ -550,14 +592,22 @@ pub fn rvs_plan_irc_command(
                 IrcCommandEffect::Reply(rvs_build_cap_ls_reply()),
             ],
             CapSubCommand::REQ => {
-                vec![IrcCommandEffect::Reply(rvs_build_cap_nak_reply(param2.clone()))]
+                vec![IrcCommandEffect::Reply(rvs_build_cap_nak_reply(
+                    param2.clone(),
+                ))]
             }
             CapSubCommand::END => {
                 let mut effects = vec![IrcCommandEffect::SetCapNegotiating(false)];
-                if let RegistrationState::Pending { got_nick: true, got_user: true } = reg_state {
+                if let RegistrationState::Pending {
+                    got_nick: true,
+                    got_user: true,
+                } = reg_state
+                {
                     effects.push(IrcCommandEffect::SetRegState(RegistrationState::Registered));
                     effects.push(IrcCommandEffect::BroadcastNick(nick.to_owned()));
-                    effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(nick, now_str)));
+                    effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(
+                        nick, now_str,
+                    )));
                 }
                 effects
             }
@@ -567,11 +617,16 @@ pub fn rvs_plan_irc_command(
         Command::NICK(new_nick) => {
             let mut effects = vec![IrcCommandEffect::SetNick(new_nick.clone())];
             match reg_state {
-                RegistrationState::Pending { got_nick: _, got_user } => {
+                RegistrationState::Pending {
+                    got_nick: _,
+                    got_user,
+                } => {
                     if *got_user && !cap_negotiating {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Registered));
                         effects.push(IrcCommandEffect::BroadcastNick(new_nick.clone()));
-                        effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(new_nick, now_str)));
+                        effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(
+                            new_nick, now_str,
+                        )));
                     } else {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Pending {
                             got_nick: true,
@@ -581,7 +636,9 @@ pub fn rvs_plan_irc_command(
                 }
                 RegistrationState::Registered => {
                     effects.push(IrcCommandEffect::BroadcastNick(new_nick.clone()));
-                    effects.push(IrcCommandEffect::Reply(rvs_build_nick_change_broadcast(new_nick, user)));
+                    effects.push(IrcCommandEffect::Reply(rvs_build_nick_change_broadcast(
+                        new_nick, user,
+                    )));
                 }
             }
             effects
@@ -590,11 +647,16 @@ pub fn rvs_plan_irc_command(
         Command::USER(new_user, _mode, _realname) => {
             let mut effects = vec![IrcCommandEffect::SetUser(new_user.clone())];
             match reg_state {
-                RegistrationState::Pending { got_nick, got_user: _ } => {
+                RegistrationState::Pending {
+                    got_nick,
+                    got_user: _,
+                } => {
                     if *got_nick && !cap_negotiating {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Registered));
                         effects.push(IrcCommandEffect::BroadcastNick(nick.to_owned()));
-                        effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(nick, now_str)));
+                        effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(
+                            nick, now_str,
+                        )));
                     } else {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Pending {
                             got_nick: *got_nick,
@@ -610,13 +672,19 @@ pub fn rvs_plan_irc_command(
         Command::PASS(_) => vec![],
 
         Command::PING(server1, server2) => {
-            vec![IrcCommandEffect::Reply(rvs_build_pong(server1.clone(), server2.clone()))]
+            vec![IrcCommandEffect::Reply(rvs_build_pong(
+                server1.clone(),
+                server2.clone(),
+            ))]
         }
 
         Command::QUIT(_) => vec![],
 
         _ if !reg_state.rvs_is_registered() => {
-            vec![IrcCommandEffect::LogDebug(format!("ignoring command before registration: {:?}", command))]
+            vec![IrcCommandEffect::LogDebug(format!(
+                "ignoring command before registration: {:?}",
+                command
+            ))]
         }
 
         Command::JOIN(chanlist, _chankeys, _realname) => {
@@ -624,11 +692,16 @@ pub fn rvs_plan_irc_command(
         }
 
         Command::PART(chanlist, comment) => {
-            vec![IrcCommandEffect::Reply(rvs_handle_part(nick, user, chanlist, comment))]
+            vec![IrcCommandEffect::Reply(rvs_handle_part(
+                nick, user, chanlist, comment,
+            ))]
         }
 
         Command::PRIVMSG(target, text) => {
-            vec![IrcCommandEffect::SendPrivmsg { target: target.clone(), text: text.clone() }]
+            vec![IrcCommandEffect::SendPrivmsg {
+                target: target.clone(),
+                text: text.clone(),
+            }]
         }
 
         Command::NOTICE(_target, _text) => vec![],
@@ -639,15 +712,21 @@ pub fn rvs_plan_irc_command(
         }
 
         Command::WHOIS(_target, mask) => {
-            vec![IrcCommandEffect::Reply(rvs_build_whois_reply(nick, user, mask))]
+            vec![IrcCommandEffect::Reply(rvs_build_whois_reply(
+                nick, user, mask,
+            ))]
         }
 
         Command::WHOWAS(nicklist, _count, _target) => {
-            vec![IrcCommandEffect::Reply(rvs_build_whowas_end(nick, nicklist))]
+            vec![IrcCommandEffect::Reply(rvs_build_whowas_end(
+                nick, nicklist,
+            ))]
         }
 
         Command::USERHOST(nicknames) => {
-            vec![IrcCommandEffect::Reply(rvs_build_userhost_reply(nick, nicknames))]
+            vec![IrcCommandEffect::Reply(rvs_build_userhost_reply(
+                nick, nicknames,
+            ))]
         }
 
         Command::ISON(_nicklist) => {
@@ -655,13 +734,19 @@ pub fn rvs_plan_irc_command(
         }
 
         Command::ChannelMODE(channel, _modes) => {
-            vec![IrcCommandEffect::Reply(rvs_build_channel_mode(nick, channel.clone()))]
+            vec![IrcCommandEffect::Reply(rvs_build_channel_mode(
+                nick,
+                channel.clone(),
+            ))]
         }
 
         Command::UserMODE(_nickname, _modes) => vec![],
 
         Command::TOPIC(channel, new_topic) => match new_topic {
-            None => vec![IrcCommandEffect::Reply(rvs_build_no_topic(nick, channel.clone()))],
+            None => vec![IrcCommandEffect::Reply(rvs_build_no_topic(
+                nick,
+                channel.clone(),
+            ))],
             Some(_) => vec![],
         },
 
@@ -705,7 +790,10 @@ pub fn rvs_plan_irc_command(
         }
 
         Command::AWAY(msg) => {
-            vec![IrcCommandEffect::Reply(rvs_build_away_replies(nick, msg.as_ref()))]
+            vec![IrcCommandEffect::Reply(rvs_build_away_replies(
+                nick,
+                msg.as_ref(),
+            ))]
         }
 
         Command::INVITE(_nickname, _channel) => vec![],
@@ -713,7 +801,10 @@ pub fn rvs_plan_irc_command(
         Command::KICK(_chanlist, _userlist, _comment) => vec![],
 
         unknown => {
-            vec![IrcCommandEffect::LogDebug(format!("unhandled IRC command: {:?}", unknown))]
+            vec![IrcCommandEffect::LogDebug(format!(
+                "unhandled IRC command: {:?}",
+                unknown
+            ))]
         }
     }
 }
@@ -805,7 +896,10 @@ mod tests {
 
     #[test]
     fn test_20260418_registration_state() {
-        let mut state = RegistrationState::Pending { got_nick: false, got_user: false };
+        let mut state = RegistrationState::Pending {
+            got_nick: false,
+            got_user: false,
+        };
         assert!(!state.rvs_is_registered());
         state = RegistrationState::Registered;
         assert!(state.rvs_is_registered());
@@ -916,35 +1010,50 @@ mod tests {
         assert_eq!(rvs_extract_digits("12345"), "12345");
         assert_eq!(rvs_extract_digits("#12345"), "12345");
         assert_eq!(rvs_extract_digits("group123"), "123");
-        snapshot("20260418_extract_digits", "empty, abc, 12345, #12345, group123");
+        snapshot(
+            "20260418_extract_digits",
+            "empty, abc, 12345, #12345, group123",
+        );
     }
 
     #[test]
     fn test_20260418_resolve_privmsg_target_group() {
         let result = rvs_resolve_privmsg_target("#12345");
         assert_eq!(result, PrivmsgTarget::Group(12345));
-        snapshot("20260418_resolve_privmsg_target_group", &format!("{:?}", result));
+        snapshot(
+            "20260418_resolve_privmsg_target_group",
+            &format!("{:?}", result),
+        );
     }
 
     #[test]
     fn test_20260418_resolve_privmsg_target_private() {
         let result = rvs_resolve_privmsg_target("67890");
         assert_eq!(result, PrivmsgTarget::Private(67890));
-        snapshot("20260418_resolve_privmsg_target_private", &format!("{:?}", result));
+        snapshot(
+            "20260418_resolve_privmsg_target_private",
+            &format!("{:?}", result),
+        );
     }
 
     #[test]
     fn test_20260418_resolve_privmsg_target_invalid() {
         let result = rvs_resolve_privmsg_target("#abc");
         assert!(matches!(result, PrivmsgTarget::Invalid(_)));
-        snapshot("20260418_resolve_privmsg_target_invalid", &format!("{:?}", result));
+        snapshot(
+            "20260418_resolve_privmsg_target_invalid",
+            &format!("{:?}", result),
+        );
     }
 
     #[test]
     fn test_20260418_resolve_privmsg_target_invalid_no_hash() {
         let result = rvs_resolve_privmsg_target("nobody");
         assert!(matches!(result, PrivmsgTarget::Invalid(_)));
-        snapshot("20260418_resolve_privmsg_target_invalid_no_hash", &format!("{:?}", result));
+        snapshot(
+            "20260418_resolve_privmsg_target_invalid_no_hash",
+            &format!("{:?}", result),
+        );
     }
 
     #[test]
@@ -972,14 +1081,21 @@ mod tests {
     }
 
     fn count_replies(effects: &[IrcCommandEffect]) -> usize {
-        effects.iter().filter(|e| matches!(e, IrcCommandEffect::Reply(_))).count()
+        effects
+            .iter()
+            .filter(|e| matches!(e, IrcCommandEffect::Reply(_)))
+            .count()
     }
 
     #[test]
     fn test_20260418_plan_ping() {
         let effects = rvs_plan_irc_command(
             &Command::PING("svr".to_owned(), None),
-            "nick", "user", &pending(false, false), false, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(false, false),
+            false,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 1);
         snapshot("20260418_plan_ping", &format!("{:?}", effects));
@@ -989,10 +1105,18 @@ mod tests {
     fn test_20260418_plan_nick_before_user() {
         let effects = rvs_plan_irc_command(
             &Command::NICK("mynick".to_owned()),
-            "nick", "user", &pending(false, false), false, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(false, false),
+            false,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 0);
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SetNick(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::SetNick(_)))
+        );
         snapshot("20260418_plan_nick_before_user", &format!("{:?}", effects));
     }
 
@@ -1000,11 +1124,23 @@ mod tests {
     fn test_20260418_plan_nick_after_user_completes_registration() {
         let effects = rvs_plan_irc_command(
             &Command::NICK("mynick".to_owned()),
-            "nick", "user", &pending(false, true), false, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(false, true),
+            false,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 1);
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SetRegState(_))));
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
+        );
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_)))
+        );
         snapshot("20260418_plan_nick_after_user", &format!("{:?}", effects));
     }
 
@@ -1012,20 +1148,35 @@ mod tests {
     fn test_20260418_plan_nick_blocked_by_cap() {
         let effects = rvs_plan_irc_command(
             &Command::NICK("mynick".to_owned()),
-            "nick", "user", &pending(false, true), true, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(false, true),
+            true,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 0);
-        snapshot("20260418_plan_nick_blocked_by_cap", &format!("{:?}", effects));
+        snapshot(
+            "20260418_plan_nick_blocked_by_cap",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
     fn test_20260418_plan_user_after_nick_completes_registration() {
         let effects = rvs_plan_irc_command(
             &Command::USER("myuser".to_owned(), "0".to_owned(), "real".to_owned()),
-            "nick", "user", &pending(true, false), false, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(true, false),
+            false,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 1);
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SetRegState(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
+        );
         snapshot("20260418_plan_user_after_nick", &format!("{:?}", effects));
     }
 
@@ -1033,10 +1184,18 @@ mod tests {
     fn test_20260418_plan_cap_end_completes_if_both_received() {
         let effects = rvs_plan_irc_command(
             &Command::CAP(None, CapSubCommand::END, None, None),
-            "nick", "user", &pending(true, true), false, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(true, true),
+            false,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 1);
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SetRegState(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
+        );
         snapshot("20260418_plan_cap_end_complete", &format!("{:?}", effects));
     }
 
@@ -1044,19 +1203,35 @@ mod tests {
     fn test_20260418_plan_cap_end_noop_if_not_ready() {
         let effects = rvs_plan_irc_command(
             &Command::CAP(None, CapSubCommand::END, None, None),
-            "nick", "user", &pending(false, true), false, "2024-01-01T00:00:00Z",
+            "nick",
+            "user",
+            &pending(false, true),
+            false,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 0);
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SetCapNegotiating(false))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::SetCapNegotiating(false)))
+        );
     }
 
     #[test]
     fn test_20260418_plan_join_returns_async_effect() {
         let effects = rvs_plan_irc_command(
             &Command::JOIN("#12345".to_owned(), None, None),
-            "nick", "user", &RegistrationState::Registered, false, "",
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
         );
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_)))
+        );
         snapshot("20260418_plan_join", &format!("{:?}", effects));
     }
 
@@ -1064,19 +1239,39 @@ mod tests {
     fn test_20260418_plan_join_ignored_before_registration() {
         let effects = rvs_plan_irc_command(
             &Command::JOIN("#12345".to_owned(), None, None),
-            "nick", "user", &pending(false, false), false, "",
+            "nick",
+            "user",
+            &pending(false, false),
+            false,
+            "",
         );
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::LogDebug(_))));
-        assert!(!effects.iter().any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::LogDebug(_)))
+        );
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_)))
+        );
     }
 
     #[test]
     fn test_20260418_plan_privmsg() {
         let effects = rvs_plan_irc_command(
             &Command::PRIVMSG("#12345".to_owned(), "hello".to_owned()),
-            "nick", "user", &RegistrationState::Registered, false, "",
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
         );
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SendPrivmsg { .. })));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::SendPrivmsg { .. }))
+        );
         snapshot("20260418_plan_privmsg", &format!("{:?}", effects));
     }
 
@@ -1084,7 +1279,11 @@ mod tests {
     fn test_20260418_plan_motd() {
         let effects = rvs_plan_irc_command(
             &Command::MOTD(None),
-            "nick", "user", &RegistrationState::Registered, false, "",
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
         );
         assert_eq!(count_replies(&effects), 1);
         snapshot("20260418_plan_motd", &format!("{:?}", effects));
@@ -1094,7 +1293,11 @@ mod tests {
     fn test_20260418_plan_time() {
         let effects = rvs_plan_irc_command(
             &Command::TIME(None),
-            "nick", "user", &RegistrationState::Registered, false, "2024-06-15T12:00:00Z",
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "2024-06-15T12:00:00Z",
         );
         assert_eq!(count_replies(&effects), 1);
         snapshot("20260418_plan_time", &format!("{:?}", effects));
@@ -1104,20 +1307,39 @@ mod tests {
     fn test_20260418_plan_nick_change_when_registered() {
         let effects = rvs_plan_irc_command(
             &Command::NICK("newnick".to_owned()),
-            "oldnick", "user", &RegistrationState::Registered, false, "",
+            "oldnick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
         );
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_)))
+        );
         assert_eq!(count_replies(&effects), 1);
-        snapshot("20260418_plan_nick_change_registered", &format!("{:?}", effects));
+        snapshot(
+            "20260418_plan_nick_change_registered",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
     fn test_20260418_plan_unknown_command() {
         let effects = rvs_plan_irc_command(
             &Command::Raw("BOGUS test".to_owned(), vec![]),
-            "nick", "user", &RegistrationState::Registered, false, "",
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
         );
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::LogDebug(_))));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::LogDebug(_)))
+        );
         snapshot("20260418_plan_unknown_command", &format!("{:?}", effects));
     }
 
@@ -1128,35 +1350,70 @@ mod tests {
 
         let effects = rvs_plan_irc_command(
             &Command::CAP(None, CapSubCommand::LS, None, None),
-            "", "", &state, cap_neg, "",
+            "",
+            "",
+            &state,
+            cap_neg,
+            "",
         );
         apply_effects(&effects, &mut state, &mut cap_neg);
         assert!(cap_neg);
 
         let effects = rvs_plan_irc_command(
             &Command::NICK("mynick".to_owned()),
-            "", "", &state, cap_neg, "",
+            "",
+            "",
+            &state,
+            cap_neg,
+            "",
         );
         apply_effects(&effects, &mut state, &mut cap_neg);
-        assert!(matches!(state, RegistrationState::Pending { got_nick: true, got_user: false }));
+        assert!(matches!(
+            state,
+            RegistrationState::Pending {
+                got_nick: true,
+                got_user: false
+            }
+        ));
 
         let effects = rvs_plan_irc_command(
             &Command::USER("myuser".to_owned(), "0".to_owned(), "real".to_owned()),
-            "mynick", "", &state, cap_neg, "",
+            "mynick",
+            "",
+            &state,
+            cap_neg,
+            "",
         );
         apply_effects(&effects, &mut state, &mut cap_neg);
-        assert!(matches!(state, RegistrationState::Pending { got_nick: true, got_user: true }));
+        assert!(matches!(
+            state,
+            RegistrationState::Pending {
+                got_nick: true,
+                got_user: true
+            }
+        ));
 
         let effects = rvs_plan_irc_command(
             &Command::CAP(None, CapSubCommand::END, None, None),
-            "mynick", "myuser", &state, cap_neg, "2024-01-01T00:00:00Z",
+            "mynick",
+            "myuser",
+            &state,
+            cap_neg,
+            "2024-01-01T00:00:00Z",
         );
         assert_eq!(count_replies(&effects), 1);
-        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::SetRegState(RegistrationState::Registered))));
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            IrcCommandEffect::SetRegState(RegistrationState::Registered)
+        )));
         snapshot("20260418_irssi_registration_flow", &format!("{effects:?}"));
     }
 
-    fn apply_effects(effects: &[IrcCommandEffect], state: &mut RegistrationState, cap_neg: &mut bool) {
+    fn apply_effects(
+        effects: &[IrcCommandEffect],
+        state: &mut RegistrationState,
+        cap_neg: &mut bool,
+    ) {
         for e in effects {
             match e {
                 IrcCommandEffect::SetRegState(s) => *state = s.clone(),
