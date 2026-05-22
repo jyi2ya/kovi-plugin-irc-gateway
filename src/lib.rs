@@ -35,8 +35,12 @@ async fn rvs_plugin_main_ABEIMPSB() {
         let bot = Arc::clone(&bot);
         let image_mode = config.clone();
         async move {
-            let rendered =
-                onebot::RenderedOnebotMessage::rvs_from_msg_event_ABEISP(event.as_ref(), bot, &image_mode).await;
+            let rendered = onebot::RenderedOnebotMessage::rvs_from_msg_event_ABEISP(
+                event.as_ref(),
+                bot,
+                &image_mode,
+            )
+            .await;
             let _ = broadcast_tx.send(rendered);
         }
     })

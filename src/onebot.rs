@@ -131,9 +131,7 @@ async fn rvs_render_reply_segment_AIP(
             .unwrap_or_else(|| sender_id.to_string()),
     };
     let sanitized = rvs_sanitize_nick(&sender_nick);
-    rvs_pick_sender_name(&sanitized, sender_id)
-        + ": "
-        + &rvs_reply_content_hint(&info)
+    rvs_pick_sender_name(&sanitized, sender_id) + ": " + &rvs_reply_content_hint(&info)
 }
 
 #[allow(non_snake_case)]
@@ -295,7 +293,13 @@ impl RenderedOnebotMessage {
                 value.sender.user_id,
             );
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), None, image_mode).await,
+                &rvs_render_qq_array_message_ABEISP(
+                    &value.message,
+                    Arc::clone(&bot),
+                    None,
+                    image_mode,
+                )
+                .await,
             );
             Self::Private {
                 content,
@@ -311,8 +315,13 @@ impl RenderedOnebotMessage {
                 .and_then(|info| rvs_extract_group_sender_name(&info))
                 .unwrap_or_else(|| value.sender.user_id.to_string());
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), Some(gid), image_mode)
-                    .await,
+                &rvs_render_qq_array_message_ABEISP(
+                    &value.message,
+                    Arc::clone(&bot),
+                    Some(gid),
+                    image_mode,
+                )
+                .await,
             );
             Self::Group {
                 content,
