@@ -106,15 +106,15 @@ async fn rvs_render_reply_segment_AIP(
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
     if message_id == 0 {
-        return "[reply]".to_owned();
+        return "> [reply]".to_owned();
     }
     let info = match bot.get_msg(message_id).await {
         Ok(info) => info,
-        Err(_) => return "[reply]".to_owned(),
+        Err(_) => return "> [reply]".to_owned(),
     };
     let sender_id = match info.data["sender"]["user_id"].as_i64() {
         Some(id) => id,
-        None => return "[reply]".to_owned(),
+        None => return "> [reply]".to_owned(),
     };
     let sender_nick = match group_id {
         Some(gid) => bot
@@ -131,7 +131,9 @@ async fn rvs_render_reply_segment_AIP(
             .unwrap_or_else(|| sender_id.to_string()),
     };
     let sanitized = rvs_sanitize_nick(&sender_nick);
-    rvs_pick_sender_name(&sanitized, sender_id) + ": " + &rvs_reply_content_hint(&info)
+    let sender_name = rvs_pick_sender_name(&sanitized, sender_id);
+    let content_hint = rvs_reply_content_hint(&info);
+    format!("> {sender_name}: {content_hint}\n")
 }
 
 #[allow(non_snake_case)]
