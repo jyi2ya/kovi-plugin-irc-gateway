@@ -350,13 +350,6 @@ pub async fn rvs_handle_irc_connection_ABEIMP(
     onebot_rx: tokio::sync::broadcast::Receiver<RenderedOnebotMessage>,
     bot: Arc<kovi::RuntimeBot>,
 ) {
-    let conn = match conn.try_into_tcp() {
-        Ok(conn) => conn,
-        Err(conn) => {
-            log::error!("unsupported connection type: {:?}", conn);
-            return;
-        }
-    };
     let codec = irc_proto::IrcCodec::new("utf-8").expect("utf-8 is always a valid encoding");
     let irc_conn = codec.framed(conn);
     let (irc_tx, irc_rx) = irc_conn.split();
