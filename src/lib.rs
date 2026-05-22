@@ -27,14 +27,16 @@ async fn rvs_plugin_main_ABEIMPSB() {
     ));
 
     let broadcast_tx = Arc::new(broadcast_tx);
+    let config = Arc::new(config.image_mode.clone());
 
     kovi::PluginBuilder::on_msg(move |event: Arc<kovi::MsgEvent>| {
         let broadcast_tx: Arc<kovi::tokio::sync::broadcast::Sender<onebot::RenderedOnebotMessage>> =
             Arc::clone(&broadcast_tx);
         let bot = Arc::clone(&bot);
+        let image_mode = config.clone();
         async move {
             let rendered =
-                onebot::RenderedOnebotMessage::rvs_from_msg_event_ABEISP(event.as_ref(), bot).await;
+                onebot::RenderedOnebotMessage::rvs_from_msg_event_ABEISP(event.as_ref(), bot, &image_mode).await;
             let _ = broadcast_tx.send(rendered);
         }
     })

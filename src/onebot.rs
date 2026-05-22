@@ -4,6 +4,7 @@ use std::sync::{Arc, LazyLock};
 use kovi::log;
 use kovi::serde_json;
 
+use crate::config::ImageMode;
 use crate::irc_proto::rvs_sanitize_nick;
 
 #[derive(Debug, Clone)]
@@ -67,6 +68,7 @@ pub async fn rvs_render_qq_array_message_ABEISP(
     messages: &kovi::Message,
     bot: Arc<kovi::RuntimeBot>,
     group_id: Option<i64>,
+    image_mode: &ImageMode,
 ) -> String {
     use futures::{StreamExt, stream};
 
@@ -78,7 +80,7 @@ pub async fn rvs_render_qq_array_message_ABEISP(
                 return rendered;
             }
             match segment.type_.as_str() {
-                "image" => rvs_render_image_segment_ABEIP(&segment, &bot).await,
+                "image" => rvs_render_image_segment_ABEIP(&segment, &bot, image_mode).await,
                 "at" => {
                     let qq = segment.data["qq"].as_str().unwrap_or("?");
                     rvs_render_at_mention_AEIP(qq, group_id, &bot).await
@@ -96,7 +98,12 @@ pub async fn rvs_render_qq_array_message_ABEISP(
 async fn rvs_render_image_segment_ABEIP(
     segment: &kovi::bot::message::Segment,
     bot: &kovi::RuntimeBot,
+    image_mode: &ImageMode,
 ) -> String {
+    match image_mode {
+        ImageMode::Placeholder => return "[图片]".to_owned(),
+        ImageMode::AsciiArt => {}
+    }
     let file = match segment.data["file"].as_str() {
         Some(f) => f,
         None => return "[image:unknown]".to_owned(),
@@ -223,6 +230,7 @@ impl RenderedOnebotMessage {
     pub async fn rvs_from_msg_event_ABEISP(
         value: &kovi::MsgEvent,
         bot: Arc<kovi::RuntimeBot>,
+        image_mode: &ImageMode,
     ) -> Self {
         if value.is_private() {
             let sender_name = rvs_pick_sender_name(
@@ -230,7 +238,7 @@ impl RenderedOnebotMessage {
                 value.sender.user_id,
             );
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), None).await,
+                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), None, image_mode).await,
             );
             Self::Private {
                 content,
@@ -246,7 +254,7 @@ impl RenderedOnebotMessage {
                 .and_then(|info| rvs_extract_group_sender_name(&info))
                 .unwrap_or_else(|| value.sender.user_id.to_string());
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), Some(gid))
+                &rvs_render_qq_array_message_ABEISP(&value.message, Arc::clone(&bot), Some(gid), image_mode)
                     .await,
             );
             Self::Group {
