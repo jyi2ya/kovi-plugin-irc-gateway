@@ -1,0 +1,1 @@
+Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: PING("test", None) }

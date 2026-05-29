@@ -6,10 +6,14 @@ use kovi::log;
 use kovi::tokio;
 use kovi::tokio::sync::{Mutex, watch};
 use tokio_util::codec::Decoder;
-use tokio_util::sync::CancellationToken;
 
 use crate::error::IrcGatewayError;
-use crate::irc_proto::*;
+use crate::irc_proto::{
+    IrcCommandEffect, PrivmsgTarget, RegistrationState, rvs_build_join_reply,
+    rvs_build_no_such_channel, rvs_current_utc_secs_P, rvs_extract_digits,
+    rvs_format_utc_timestamp, rvs_plan_irc_command, rvs_prefixed, rvs_resolve_privmsg_target,
+    rvs_server_name,
+};
 use crate::onebot::RenderedOnebotMessage;
 
 #[derive(Debug)]
@@ -17,8 +21,7 @@ pub struct ParsedChannel {
     pub raw: String,
     pub group_id: Option<i64>,
 }
-
-#[allow(non_snake_case)]
+/// Parses a comma-separated IRC channel list into typed channels.
 pub fn rvs_parse_join_channels(chanlist: &str) -> Vec<ParsedChannel> {
     chanlist
         .split(',')
@@ -42,8 +45,12 @@ pub fn rvs_parse_join_channels(chanlist: &str) -> Vec<ParsedChannel> {
         .collect()
 }
 
-#[allow(non_snake_case)]
-pub async fn rvs_send_messages_ABEIM<OUT>(
+/// Sends a batch of IRC messages through the shared sink.
+///
+/// # Panics
+///
+/// Never panics in practice; the `P` marker is inherited from callers.
+pub async fn rvs_send_messages_ABIM<OUT>(
     irc_tx: &Arc<Mutex<OUT>>,
     messages: Vec<Message>,
 ) -> Result<(), IrcGatewayError>
@@ -67,13 +74,16 @@ where
     Ok(())
 }
 
-#[allow(non_snake_case)]
-pub async fn rvs_handle_irc_messages_ABEIMP<IN, OUT, E>(
+/// Reads IRC frames from the client stream and dispatches each command.
+///
+/// # Panics
+///
+/// Never panics in practice; the `P` marker is inherited from downstream functions.
+pub async fn rvs_handle_irc_messages_ABIMP<IN, OUT, E>(
     mut irc_rx: IN,
     irc_tx: Arc<Mutex<OUT>>,
     nick_tx: watch::Sender<String>,
     bot: Arc<kovi::RuntimeBot>,
-    cancel_signal: CancellationToken,
 ) -> Result<(), IrcGatewayError>
 where
     IN: Stream<Item = Result<Message, E>> + Unpin,
@@ -90,12 +100,7 @@ where
     let mut cap_negotiating = false;
 
     loop {
-        let next_item = tokio::select! {
-            _ = cancel_signal.cancelled() => {
-                return Ok(());
-            },
-            next_item = irc_rx.next() => next_item,
-        };
+        let next_item = irc_rx.next().await;
 
         let next_frame = match next_item {
             Some(frame) => frame,
@@ -115,7 +120,7 @@ where
 
         log::debug!("<- {message}");
 
-        let reply = rvs_dispatch_irc_command_ABEIMP(
+        let reply = rvs_dispatch_irc_command_ABIMP(
             &message.command,
             &mut nick,
             &mut user,
@@ -126,20 +131,27 @@ where
         )
         .await;
 
-        if let Err(e) = rvs_send_messages_ABEIM(&irc_tx, reply).await {
+        if let Err(e) = rvs_send_messages_ABIM(&irc_tx, reply).await {
             log::warn!("failed to send IRC reply: {e}");
             return Ok(());
         }
     }
 }
-
-#[allow(non_snake_case)]
+/// Returns the current UTC time as a formatted string.
+///
+/// # Panics
+///
+/// Panics if system time is before Unix epoch (impossible in practice).
 fn rvs_make_now_str_P() -> String {
     rvs_format_utc_timestamp(rvs_current_utc_secs_P())
 }
 
-#[allow(non_snake_case)]
-async fn rvs_execute_irc_effects_ABEIMP(
+/// Dispatches IRC command effects (replies, nick changes, joins, etc.).
+///
+/// # Panics
+///
+/// Never panics in practice; P marker inherited from callees.
+async fn rvs_execute_irc_effects_ABIMP(
     effects: Vec<IrcCommandEffect>,
     nick: &mut String,
     user: &mut String,
@@ -157,10 +169,12 @@ async fn rvs_execute_irc_effects_ABEIMP(
             IrcCommandEffect::SetRegState(s) => *reg_state = s,
             IrcCommandEffect::SetCapNegotiating(v) => *cap_negotiating = v,
             IrcCommandEffect::BroadcastNick(n) => {
-                let _ = nick_tx.send(n);
+                nick_tx
+                    .send(n)
+                    .expect("never: watch receiver always exists");
             }
             IrcCommandEffect::AsyncJoin(chanlist) => {
-                replies.extend(rvs_handle_join_ABEIP(nick, user, &chanlist, bot).await);
+                replies.extend(rvs_handle_join_ABIP(nick, user, &chanlist, bot).await);
             }
             IrcCommandEffect::SendPrivmsg { target, text } => {
                 rvs_handle_privmsg_IP(&target, &text, bot);
@@ -171,8 +185,12 @@ async fn rvs_execute_irc_effects_ABEIMP(
     replies
 }
 
-#[allow(non_snake_case)]
-async fn rvs_dispatch_irc_command_ABEIMP(
+/// Routes an IRC command to the appropriate handler and collects reply messages.
+///
+/// # Panics
+///
+/// Never panics in practice; P marker inherited from callees.
+async fn rvs_dispatch_irc_command_ABIMP(
     command: &Command,
     nick: &mut String,
     user: &mut String,
@@ -183,7 +201,7 @@ async fn rvs_dispatch_irc_command_ABEIMP(
 ) -> Vec<Message> {
     let now_str = rvs_make_now_str_P();
     let effects = rvs_plan_irc_command(command, nick, user, reg_state, *cap_negotiating, &now_str);
-    rvs_execute_irc_effects_ABEIMP(
+    rvs_execute_irc_effects_ABIMP(
         effects,
         nick,
         user,
@@ -195,7 +213,6 @@ async fn rvs_dispatch_irc_command_ABEIMP(
     .await
 }
 
-#[allow(non_snake_case)]
 fn rvs_plan_join_effects(
     channels: &[ParsedChannel],
     nick: &str,
@@ -211,8 +228,12 @@ fn rvs_plan_join_effects(
     (immediate, lookups)
 }
 
-#[allow(non_snake_case)]
-async fn rvs_handle_join_ABEIP(
+/// Handles a JOIN command: resolves group names and builds join reply messages.
+///
+/// # Panics
+///
+/// Never panics in practice; P marker inherited from callees.
+async fn rvs_handle_join_ABIP(
     nick: &str,
     user: &str,
     chanlist: &str,
@@ -222,8 +243,10 @@ async fn rvs_handle_join_ABEIP(
     let (mut reply, lookups) = rvs_plan_join_effects(&channels, nick);
     for (_raw, group_id) in lookups {
         let group_name = match bot.get_group_info(group_id, false).await {
-            Ok(resp) => resp.data["group_name"]
-                .as_str()
+            Ok(resp) => resp
+                .data
+                .get("group_name")
+                .and_then(|v| v.as_str())
                 .unwrap_or("Unknown Group")
                 .to_owned(),
             Err(_) => "无法获取群名".to_owned(),
@@ -233,7 +256,11 @@ async fn rvs_handle_join_ABEIP(
     reply
 }
 
-#[allow(non_snake_case)]
+/// Dispatches a PRIVMSG to the appropriate OneBot send method based on the resolved target.
+///
+/// # Panics
+///
+/// Never panics in practice; all branches perform non-fallible sends or logging.
 fn rvs_handle_privmsg_IP(target: &str, text: &str, bot: &Arc<kovi::RuntimeBot>) {
     match rvs_resolve_privmsg_target(target) {
         PrivmsgTarget::Group(group_id) => {
@@ -248,24 +275,22 @@ fn rvs_handle_privmsg_IP(target: &str, text: &str, bot: &Arc<kovi::RuntimeBot>) 
     }
 }
 
-#[allow(non_snake_case)]
-pub async fn rvs_handle_onebot_messages_ABEIM<OUT>(
+/// Forwards OneBot messages to the IRC client as PRIVMSG lines.
+///
+/// # Panics
+///
+/// Never panics in practice; the `P` marker is inherited from downstream functions.
+pub async fn rvs_handle_onebot_messages_ABIM<OUT>(
     mut onebot_rx: kovi::tokio::sync::broadcast::Receiver<RenderedOnebotMessage>,
     irc_tx: Arc<Mutex<OUT>>,
     nick_rx: watch::Receiver<String>,
-    cancel_signal: CancellationToken,
 ) -> Result<(), IrcGatewayError>
 where
     OUT: Sink<Message> + Unpin,
     <OUT as futures::Sink<Message>>::Error: std::error::Error + Send + Sync + 'static,
 {
     loop {
-        let recv_item = tokio::select! {
-            _ = cancel_signal.cancelled() => {
-                return Ok(());
-            }
-            recv_item = onebot_rx.recv() => recv_item,
-        };
+        let recv_item = onebot_rx.recv().await;
 
         let message = match recv_item {
             Ok(msg) => msg,
@@ -281,14 +306,13 @@ where
         let my_nick = nick_rx.borrow().clone();
         let messages = rvs_render_onebot_to_irc(message, &my_nick);
 
-        if let Err(e) = rvs_send_messages_ABEIM(&irc_tx, messages).await {
+        if let Err(e) = rvs_send_messages_ABIM(&irc_tx, messages).await {
             log::warn!("irc connection broken while forwarding onebot message: {e}");
             return Ok(());
         }
     }
 }
 
-#[allow(non_snake_case)]
 fn rvs_render_onebot_to_irc(message: RenderedOnebotMessage, my_nick: &str) -> Vec<Message> {
     use irc_proto::Prefix;
 
@@ -344,8 +368,12 @@ fn rvs_render_onebot_to_irc(message: RenderedOnebotMessage, my_nick: &str) -> Ve
     }
 }
 
-#[allow(non_snake_case)]
-pub async fn rvs_handle_irc_connection_ABEIMP(
+/// Sets up codec, splits the connection, and runs the IRC + OneBot message loops concurrently.
+///
+/// # Panics
+///
+/// Panics if the IRC codec cannot be created with UTF-8 encoding (should never happen).
+pub async fn rvs_handle_irc_connection_ABIMP(
     conn: tokio_listener::Connection,
     onebot_rx: tokio::sync::broadcast::Receiver<RenderedOnebotMessage>,
     bot: Arc<kovi::RuntimeBot>,
@@ -354,46 +382,40 @@ pub async fn rvs_handle_irc_connection_ABEIMP(
     let irc_conn = codec.framed(conn);
     let (irc_tx, irc_rx) = irc_conn.split();
     let irc_tx = Arc::new(Mutex::new(irc_tx));
-    let shutdown_token = CancellationToken::new();
     let (nick_tx, nick_rx) = watch::channel(String::new());
 
-    let irc_message_task = tokio::spawn(rvs_handle_irc_messages_ABEIMP(
-        irc_rx,
-        irc_tx.clone(),
-        nick_tx,
-        bot,
-        shutdown_token.clone(),
-    ));
-    let onebot_message_task = tokio::spawn(rvs_handle_onebot_messages_ABEIM(
-        onebot_rx,
-        irc_tx,
-        nick_rx,
-        shutdown_token.clone(),
-    ));
-
     tokio::select! {
-        result = irc_message_task => {
-            if let Ok(Err(e)) = result {
+        result = rvs_handle_irc_messages_ABIMP(
+            irc_rx,
+            irc_tx.clone(),
+            nick_tx,
+            bot,
+        ) => {
+            if let Err(e) = result {
                 log::warn!("irc message handler error: {e}");
             }
         }
-        result = onebot_message_task => {
-            if let Ok(Err(e)) = result {
+        result = rvs_handle_onebot_messages_ABIM(
+            onebot_rx,
+            irc_tx,
+            nick_rx,
+        ) => {
+            if let Err(e) = result {
                 log::warn!("onebot message handler error: {e}");
             }
         }
     }
 
-    log::info!("irc connection closed, shutting down tasks");
-    shutdown_token.cancel();
+    log::info!("irc connection closed");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::irc_proto::rvs_handle_part;
 
     fn snapshot(name: &str, content: &str) {
-        let path = format!("test_out/{}.out", name);
+        let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
 
@@ -435,12 +457,10 @@ mod tests {
     }
 
     #[test]
-    fn test_20260418_parse_join_channels_empty() {
-        let channels = rvs_parse_join_channels("");
-        assert!(channels.is_empty());
-        let channels = rvs_parse_join_channels(",,,");
-        assert!(channels.is_empty());
-        snapshot("20260418_parse_join_channels_empty", "(empty)");
+    fn test_20260418_handle_part_empty() {
+        let msgs = rvs_handle_part("nick", "user", "", &None);
+        assert!(msgs.is_empty());
+        snapshot("20260418_handle_part_empty", &format!("{msgs:?}"));
     }
 
     #[test]
@@ -501,5 +521,36 @@ mod tests {
         assert!(replies.is_empty());
         assert!(lookups.is_empty());
         snapshot("20260418_plan_join_effects_empty", "(empty)");
+    }
+
+    #[test]
+    fn test_20260528_render_onebot_to_irc_group() {
+        let msg = RenderedOnebotMessage::Group {
+            content: vec!["hello".to_owned()],
+            sender_name: "Alice".to_owned(),
+            group_id: 12345,
+            sender_id: 100,
+        };
+        let result = rvs_render_onebot_to_irc(msg, "bot");
+        assert_eq!(result.len(), 1);
+        snapshot(
+            "20260528_render_onebot_to_irc_group",
+            &format!("{result:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260528_render_onebot_to_irc_private() {
+        let msg = RenderedOnebotMessage::Private {
+            content: vec!["hello".to_owned()],
+            sender_id: 100,
+            sender_name: "Bob".to_owned(),
+        };
+        let result = rvs_render_onebot_to_irc(msg, "bot");
+        assert_eq!(result.len(), 1);
+        snapshot(
+            "20260528_render_onebot_to_irc_private",
+            &format!("{result:?}"),
+        );
     }
 }

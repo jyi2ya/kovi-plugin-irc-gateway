@@ -1,0 +1,1 @@
+[LogDebug("ignoring command before registration: JOIN(\"#12345\", None, None)")]

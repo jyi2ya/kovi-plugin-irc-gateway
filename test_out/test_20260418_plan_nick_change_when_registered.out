@@ -1,0 +1,1 @@
+[SetNick("newnick"), BroadcastNick("newnick"), Reply([Message { tags: None, prefix: Some(Nickname("newnick", "user", "onebotirc.villv.tech")), command: NICK("newnick") }])]

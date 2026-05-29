@@ -1,3 +1,8 @@
+#![expect(
+    non_snake_case,
+    reason = "rvs_ functions use uppercase capability suffixes (A/B/I/M/P/S/T/U)"
+)]
+
 mod config;
 mod error;
 mod irc_handler;
@@ -9,16 +14,21 @@ use std::sync::Arc;
 
 use config::Config;
 
-#[allow(non_snake_case)]
 #[kovi::plugin]
-async fn rvs_plugin_main_ABEIMPSB() {
+/// Entry point for the kovi plugin: loads config and starts the IRC gateway.
+///
+/// # Panics
+///
+/// Panics if the config file cannot be loaded or parsed.
+async fn rvs_plugin_main_ABIMPS() {
     let bot = kovi::PluginBuilder::get_runtime_bot();
     let data_path = bot.get_data_path();
     let config_path = data_path.join("config.toml");
-    let config: Config = kovi::utils::load_toml_data(Config::default(), config_path).unwrap();
+    let config: Config = kovi::utils::load_toml_data(Config::default(), config_path)
+        .expect("never: config is valid TOML with defaults");
 
     let broadcast_tx = kovi::tokio::sync::broadcast::Sender::new(16);
-    let _irc = kovi::spawn(server::rvs_irc_server_main_ABEIMP(
+    let _irc = kovi::spawn(server::rvs_irc_server_main_ABIMP(
         config.bind_addr,
         config.user_options,
         Default::default(),
@@ -35,13 +45,13 @@ async fn rvs_plugin_main_ABEIMPSB() {
         let bot = Arc::clone(&bot);
         let image_mode = config.clone();
         async move {
-            let rendered = onebot::RenderedOnebotMessage::rvs_from_msg_event_ABEISP(
+            let rendered = onebot::RenderedOnebotMessage::rvs_from_msg_event_ABIPS(
                 event.as_ref(),
                 bot,
                 &image_mode,
             )
             .await;
-            let _ = broadcast_tx.send(rendered);
+            drop(broadcast_tx.send(rendered));
         }
     })
 }

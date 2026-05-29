@@ -16,43 +16,43 @@ pub enum IrcCommandEffect {
     LogDebug(String),
 }
 
-#[allow(non_snake_case)]
+/// Returns the configured IRC server hostname.
 pub fn rvs_server_name() -> &'static str {
     SERVER_NAME
 }
 
-#[allow(non_snake_case)]
+/// Returns the configured server version string.
 pub fn rvs_server_version() -> &'static str {
     SERVER_VERSION
 }
 
-#[allow(non_snake_case)]
+/// Attaches the given prefix to a message.
 pub fn rvs_prefixed(prefix: Prefix, mut message: Message) -> Message {
     message.prefix = Some(prefix);
     message
 }
 
-#[allow(non_snake_case)]
+/// Returns a server-name prefix using the configured hostname.
 pub fn rvs_server_prefix() -> Prefix {
     Prefix::ServerName(SERVER_NAME.to_owned())
 }
 
-#[allow(non_snake_case)]
+/// Builds a message with the server prefix and the given command.
 pub fn rvs_server_msg(cmd: Command) -> Message {
     rvs_prefixed(rvs_server_prefix(), Message::from(cmd))
 }
 
-#[allow(non_snake_case)]
+/// Builds a numeric reply from the server with the given response code and arguments.
 pub fn rvs_server_reply(response: Response, args: Vec<String>) -> Message {
     rvs_server_msg(Command::Response(response, args))
 }
 
-#[allow(non_snake_case)]
+/// Builds a nickname prefix with the given nick, user, and the configured server hostname.
 pub fn rvs_nick_prefix(nick: &str, user: &str) -> Prefix {
     Prefix::Nickname(nick.to_owned(), user.to_owned(), SERVER_NAME.to_owned())
 }
 
-#[allow(non_snake_case)]
+/// Builds the RPL_MOTDSTART message.
 pub fn rvs_build_motd_start(nick: &str) -> Message {
     rvs_server_reply(
         Response::RPL_MOTDSTART,
@@ -63,7 +63,7 @@ pub fn rvs_build_motd_start(nick: &str) -> Message {
     )
 }
 
-#[allow(non_snake_case)]
+/// Builds a single RPL_MOTD line.
 pub fn rvs_build_motd_line(nick: &str, line: &str) -> Message {
     rvs_server_reply(
         Response::RPL_MOTD,
@@ -71,7 +71,7 @@ pub fn rvs_build_motd_line(nick: &str, line: &str) -> Message {
     )
 }
 
-#[allow(non_snake_case)]
+/// Builds the RPL_ENDOFMOTD message.
 pub fn rvs_build_motd_end(nick: &str) -> Message {
     rvs_server_reply(
         Response::RPL_ENDOFMOTD,
@@ -79,8 +79,13 @@ pub fn rvs_build_motd_end(nick: &str) -> Message {
     )
 }
 
-#[allow(non_snake_case)]
+/// Formats a Unix timestamp (seconds since epoch) as an ISO 8601 UTC datetime string.
+///
+/// # Panics
+///
+/// Never panics in practice; integer arithmetic is used throughout.
 pub fn rvs_format_utc_timestamp(secs: u64) -> String {
+    debug_assert!(secs < 253402300800, "timestamp exceeds year 9999");
     let s = secs % 60;
     let m = (secs / 60) % 60;
     let h = (secs / 3600) % 24;
@@ -88,18 +93,19 @@ pub fn rvs_format_utc_timestamp(secs: u64) -> String {
     let mut year = 1970u64;
     let mut remaining_days = days;
     loop {
-        let days_in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) {
-            366
-        } else {
-            365
-        };
+        let days_in_year =
+            if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {
+                366
+            } else {
+                365
+            };
         if remaining_days < days_in_year {
             break;
         }
         remaining_days -= days_in_year;
         year += 1;
     }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
     let month_days: [u64; 12] = [
         31,
         if leap { 29 } else { 28 },
@@ -126,7 +132,11 @@ pub fn rvs_format_utc_timestamp(secs: u64) -> String {
     format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
 }
 
-#[allow(non_snake_case)]
+/// Returns the current UTC time as seconds since the Unix epoch.
+///
+/// # Panics
+///
+/// Never panics in practice; `duration_since` failure is handled via `unwrap_or(0)`.
 pub fn rvs_current_utc_secs_P() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
@@ -135,7 +145,7 @@ pub fn rvs_current_utc_secs_P() -> u64 {
         .unwrap_or(0)
 }
 
-#[allow(non_snake_case)]
+/// Builds the full registration welcome burst (001-005, ISUPPORT, MOTD).
 pub fn rvs_build_welcome_burst(nick: &str, now_str: &str) -> Vec<Message> {
     vec![
         rvs_server_reply(
@@ -188,13 +198,14 @@ pub fn rvs_build_welcome_burst(nick: &str, now_str: &str) -> Vec<Message> {
     ]
 }
 
-#[allow(non_snake_case)]
+/// Extracts all ASCII digits from the input string.
 pub fn rvs_extract_digits(value: &str) -> String {
     value.chars().filter(|c| c.is_ascii_digit()).collect()
 }
 
-#[allow(non_snake_case, dead_code)]
-pub fn rvs_parse_prefix_number_E<N>(value: &str) -> Option<N>
+#[expect(dead_code, reason = "utility function for parsing prefixed numbers")]
+/// Parses the first contiguous digit sequence from `value` into a numeric type `N`.
+pub fn rvs_parse_prefix_number<N>(value: &str) -> Option<N>
 where
     N: std::str::FromStr,
     <N as std::str::FromStr>::Err: std::fmt::Debug,
@@ -213,7 +224,7 @@ pub enum PrivmsgTarget {
     Invalid(String),
 }
 
-#[allow(non_snake_case)]
+/// Resolves a PRIVMSG target string into a Group, Private, or Invalid target.
 pub fn rvs_resolve_privmsg_target(target: &str) -> PrivmsgTarget {
     let (raw, prefixed) = match target.strip_prefix('#') {
         Some(s) => (s, true),
@@ -234,20 +245,20 @@ pub enum RegistrationState {
 }
 
 impl RegistrationState {
-    #[allow(non_snake_case)]
+    /// Returns `true` if registration is complete.
     pub fn rvs_is_registered(&self) -> bool {
         matches!(self, RegistrationState::Registered)
     }
 }
 
-#[allow(non_snake_case)]
+/// Strips whitespace and ASCII punctuation from a raw nickname.
 pub fn rvs_sanitize_nick(raw: &str) -> String {
     raw.chars()
         .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
         .collect::<String>()
 }
 
-#[allow(non_snake_case)]
+/// Builds a CAP LS reply advertising no capabilities.
 pub fn rvs_build_cap_ls_reply() -> Vec<Message> {
     vec![rvs_server_msg(Command::CAP(
         Some("*".to_owned()),
@@ -257,7 +268,7 @@ pub fn rvs_build_cap_ls_reply() -> Vec<Message> {
     ))]
 }
 
-#[allow(non_snake_case)]
+/// Builds a CAP NAK reply rejecting the requested capabilities.
 pub fn rvs_build_cap_nak_reply(requested: Option<String>) -> Vec<Message> {
     vec![rvs_server_msg(Command::CAP(
         Some("*".to_owned()),
@@ -267,12 +278,16 @@ pub fn rvs_build_cap_nak_reply(requested: Option<String>) -> Vec<Message> {
     ))]
 }
 
-#[allow(non_snake_case)]
+/// Builds a PONG response echoing the server tokens.
+///
+/// # Panics
+///
+/// Never panics in practice; delegates to [`rvs_server_msg`] which performs no fallible operations.
 pub fn rvs_build_pong(server1: String, server2: Option<String>) -> Vec<Message> {
     vec![rvs_server_msg(Command::PONG(server1, server2))]
 }
 
-#[allow(non_snake_case)]
+/// Builds a NICK change broadcast message from the old identity.
 pub fn rvs_build_nick_change_broadcast(nick: &str, user: &str) -> Vec<Message> {
     vec![rvs_prefixed(
         rvs_nick_prefix(nick, user),
@@ -280,13 +295,18 @@ pub fn rvs_build_nick_change_broadcast(nick: &str, user: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds the JOIN reply sequence: join event, topic, names reply, and end-of-names.
+///
+/// # Panics
+///
+/// Never panics in practice; all operations are non-fallible string formatting.
 pub fn rvs_build_join_reply(
     nick: &str,
     user: &str,
     group_id: i64,
     group_name: &str,
 ) -> Vec<Message> {
+    debug_assert!(group_id > 0, "group_id must be positive");
     let chan = format!("#{group_id}");
     vec![
         rvs_prefixed(
@@ -317,7 +337,7 @@ pub fn rvs_build_join_reply(
     ]
 }
 
-#[allow(non_snake_case)]
+/// Builds an ERR_NOSUCHCHANNEL error reply.
 pub fn rvs_build_no_such_channel(nick: &str, channel: &str) -> Message {
     rvs_server_reply(
         Response::ERR_NOSUCHCHANNEL,
@@ -329,7 +349,7 @@ pub fn rvs_build_no_such_channel(nick: &str, channel: &str) -> Message {
     )
 }
 
-#[allow(non_snake_case)]
+/// Builds a PART broadcast message with an optional part comment.
 pub fn rvs_build_part_broadcast(
     nick: &str,
     user: &str,
@@ -342,7 +362,7 @@ pub fn rvs_build_part_broadcast(
     )
 }
 
-#[allow(non_snake_case)]
+/// Builds the end-of-WHO list reply.
 pub fn rvs_build_who_end(nick: &str, mask: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFWHO,
@@ -354,7 +374,7 @@ pub fn rvs_build_who_end(nick: &str, mask: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds WHOIS user/server info and end-of-WHOIS replies.
 pub fn rvs_build_whois_reply(nick: &str, user: &str, mask: &str) -> Vec<Message> {
     vec![
         rvs_server_reply(
@@ -388,7 +408,7 @@ pub fn rvs_build_whois_reply(nick: &str, user: &str, mask: &str) -> Vec<Message>
     ]
 }
 
-#[allow(non_snake_case)]
+/// Builds the end-of-WHOWAS reply.
 pub fn rvs_build_whowas_end(nick: &str, nicklist: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFWHOWAS,
@@ -400,7 +420,7 @@ pub fn rvs_build_whowas_end(nick: &str, nicklist: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds a RPL_USERHOST reply for the given nicknames.
 pub fn rvs_build_userhost_reply(nick: &str, nicknames: &[String]) -> Vec<Message> {
     let replies: Vec<String> = nicknames
         .iter()
@@ -412,7 +432,7 @@ pub fn rvs_build_userhost_reply(nick: &str, nicknames: &[String]) -> Vec<Message
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds a RPL_ISON reply (always reports no users online).
 pub fn rvs_build_ison_reply(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ISON,
@@ -420,7 +440,7 @@ pub fn rvs_build_ison_reply(nick: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds a RPL_CHANNELMODEIS reply showing no modes set.
 pub fn rvs_build_channel_mode(nick: &str, channel: String) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_CHANNELMODEIS,
@@ -428,7 +448,7 @@ pub fn rvs_build_channel_mode(nick: &str, channel: String) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds a RPL_NOTOPIC reply for a channel.
 pub fn rvs_build_no_topic(nick: &str, channel: String) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_NOTOPIC,
@@ -436,7 +456,7 @@ pub fn rvs_build_no_topic(nick: &str, channel: String) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds the end-of-NAMES list reply for a channel.
 pub fn rvs_build_names_end(nick: &str, chan: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFNAMES,
@@ -448,7 +468,7 @@ pub fn rvs_build_names_end(nick: &str, chan: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds the end-of-LIST reply.
 pub fn rvs_build_list_end(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_LISTEND,
@@ -456,7 +476,7 @@ pub fn rvs_build_list_end(nick: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds the full MOTD burst (start, lines, end).
 pub fn rvs_build_motd_burst(nick: &str) -> Vec<Message> {
     vec![
         rvs_build_motd_start(nick),
@@ -466,7 +486,7 @@ pub fn rvs_build_motd_burst(nick: &str) -> Vec<Message> {
     ]
 }
 
-#[allow(non_snake_case)]
+/// Builds the RPL_VERSION reply with server version info.
 pub fn rvs_build_version_reply(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_VERSION,
@@ -479,7 +499,7 @@ pub fn rvs_build_version_reply(nick: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds a RPL_TIME reply with the current server time.
 pub fn rvs_build_time_reply(nick: &str, now_str: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_TIME,
@@ -491,7 +511,7 @@ pub fn rvs_build_time_reply(nick: &str, now_str: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds a RPL_INFO reply with server identification.
 pub fn rvs_build_info_reply(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_INFO,
@@ -499,7 +519,7 @@ pub fn rvs_build_info_reply(nick: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds LUSER client/me count replies (reports 1 user, 1 server).
 pub fn rvs_build_lusers_reply(nick: &str) -> Vec<Message> {
     vec![
         rvs_server_reply(
@@ -513,7 +533,7 @@ pub fn rvs_build_lusers_reply(nick: &str) -> Vec<Message> {
     ]
 }
 
-#[allow(non_snake_case)]
+/// Builds the end-of-LINKS list reply.
 pub fn rvs_build_links_end(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFLINKS,
@@ -525,7 +545,7 @@ pub fn rvs_build_links_end(nick: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds RPL_ADMINME reply with the server name.
 pub fn rvs_build_admin_reply(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ADMINME,
@@ -533,7 +553,7 @@ pub fn rvs_build_admin_reply(nick: &str) -> Vec<Message> {
     )]
 }
 
-#[allow(non_snake_case)]
+/// Builds away/unaway replies depending on whether a message was provided.
 pub fn rvs_build_away_replies(nick: &str, msg: Option<&String>) -> Vec<Message> {
     match msg {
         None => vec![rvs_server_reply(
@@ -553,7 +573,7 @@ pub fn rvs_build_away_replies(nick: &str, msg: Option<&String>) -> Vec<Message> 
     }
 }
 
-#[allow(non_snake_case)]
+/// Builds PART broadcast messages for each channel in a comma-separated list.
 pub fn rvs_handle_part(
     nick: &str,
     user: &str,
@@ -576,7 +596,11 @@ pub fn rvs_handle_part(
     reply
 }
 
-#[allow(non_snake_case)]
+/// Pure decision function: maps an IRC command to a list of effects without performing I/O.
+///
+/// # Panics
+///
+/// Never panics in practice; all match arms produce effects without fallible operations.
 pub fn rvs_plan_irc_command(
     command: &Command,
     nick: &str,
@@ -814,7 +838,7 @@ mod tests {
     use super::*;
 
     fn snapshot(name: &str, content: &str) {
-        let path = format!("test_out/{}.out", name);
+        let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
 
@@ -850,21 +874,40 @@ mod tests {
 
     #[test]
     fn test_20260418_parse_prefix_number_valid() {
-        assert_eq!(rvs_parse_prefix_number_E::<i64>("12345"), Some(12345));
-        assert_eq!(rvs_parse_prefix_number_E::<i64>("#12345"), Some(12345));
-        assert_eq!(rvs_parse_prefix_number_E::<i64>("group123"), Some(123));
+        let r1 = rvs_parse_prefix_number::<i64>("12345");
+        let r2 = rvs_parse_prefix_number::<i64>("#12345");
+        let r3 = rvs_parse_prefix_number::<i64>("group123");
+        assert_eq!(r1, Some(12345));
+        assert_eq!(r2, Some(12345));
+        assert_eq!(r3, Some(123));
+        snapshot(
+            "20260418_parse_prefix_number_valid",
+            &format!("{r1:?}, {r2:?}, {r3:?}"),
+        );
     }
 
     #[test]
     fn test_20260418_parse_prefix_number_empty() {
-        assert_eq!(rvs_parse_prefix_number_E::<i64>(""), None);
-        assert_eq!(rvs_parse_prefix_number_E::<i64>("abc"), None);
-        assert_eq!(rvs_parse_prefix_number_E::<i64>("#"), None);
+        let r1 = rvs_parse_prefix_number::<i64>("");
+        let r2 = rvs_parse_prefix_number::<i64>("abc");
+        let r3 = rvs_parse_prefix_number::<i64>("#");
+        assert_eq!(r1, None);
+        assert_eq!(r2, None);
+        assert_eq!(r3, None);
+        snapshot(
+            "20260418_parse_prefix_number_empty",
+            &format!("{r1:?}, {r2:?}, {r3:?}"),
+        );
     }
 
     #[test]
     fn test_20260418_parse_prefix_number_overflow() {
-        assert_eq!(rvs_parse_prefix_number_E::<u8>("999"), None);
+        let result = rvs_parse_prefix_number::<u8>("999");
+        assert_eq!(result, None);
+        snapshot(
+            "20260418_parse_prefix_number_overflow",
+            &format!("{result:?}"),
+        );
     }
 
     #[test]
@@ -885,6 +928,10 @@ mod tests {
     fn test_20260418_sanitize_nick_all_whitespace() {
         let result = rvs_sanitize_nick("  \t\n  ");
         assert!(result.is_empty());
+        snapshot(
+            "20260418_sanitize_nick_all_whitespace",
+            &format!("{result:?}"),
+        );
     }
 
     #[test]
@@ -903,6 +950,7 @@ mod tests {
         assert!(!state.rvs_is_registered());
         state = RegistrationState::Registered;
         assert!(state.rvs_is_registered());
+        snapshot("20260418_registration_state", &format!("{state:?}"));
     }
 
     #[test]
@@ -1070,12 +1118,6 @@ mod tests {
         snapshot("20260418_handle_part_multiple", &format!("{:?}", msgs));
     }
 
-    #[test]
-    fn test_20260418_handle_part_empty() {
-        let msgs = rvs_handle_part("nick", "user", "", &None);
-        assert!(msgs.is_empty());
-    }
-
     fn pending(got_nick: bool, got_user: bool) -> RegistrationState {
         RegistrationState::Pending { got_nick, got_user }
     }
@@ -1141,7 +1183,10 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_)))
         );
-        snapshot("20260418_plan_nick_after_user", &format!("{:?}", effects));
+        snapshot(
+            "20260418_plan_nick_after_user_completes_registration",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
@@ -1177,7 +1222,10 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
         );
-        snapshot("20260418_plan_user_after_nick", &format!("{:?}", effects));
+        snapshot(
+            "20260418_plan_user_after_nick_completes_registration",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
@@ -1196,7 +1244,10 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
         );
-        snapshot("20260418_plan_cap_end_complete", &format!("{:?}", effects));
+        snapshot(
+            "20260418_plan_cap_end_completes_if_both_received",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
@@ -1215,6 +1266,10 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetCapNegotiating(false)))
         );
+        snapshot(
+            "20260418_plan_cap_end_noop_if_not_ready",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
@@ -1232,7 +1287,10 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_)))
         );
-        snapshot("20260418_plan_join", &format!("{:?}", effects));
+        snapshot(
+            "20260418_plan_join_returns_async_effect",
+            &format!("{:?}", effects),
+        );
     }
 
     #[test]
@@ -1254,6 +1312,10 @@ mod tests {
             !effects
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_)))
+        );
+        snapshot(
+            "20260418_plan_join_ignored_before_registration",
+            &format!("{:?}", effects),
         );
     }
 
@@ -1320,7 +1382,7 @@ mod tests {
         );
         assert_eq!(count_replies(&effects), 1);
         snapshot(
-            "20260418_plan_nick_change_registered",
+            "20260418_plan_nick_change_when_registered",
             &format!("{:?}", effects),
         );
     }
@@ -1421,5 +1483,163 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    #[test]
+    fn test_20260528_server_name() {
+        let result = rvs_server_name();
+        assert!(!result.is_empty());
+        snapshot("20260528_server_name", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_server_version() {
+        let result = rvs_server_version();
+        assert!(!result.is_empty());
+        snapshot("20260528_server_version", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_server_prefix() {
+        let result = rvs_server_prefix();
+        assert!(matches!(result, Prefix::ServerName(_)));
+        snapshot("20260528_server_prefix", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_prefixed() {
+        let msg = Message::from(Command::PING("test".to_owned(), None));
+        let result = rvs_prefixed(Prefix::ServerName("srv".to_owned()), msg);
+        assert!(result.prefix.is_some());
+        snapshot("20260528_prefixed", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_server_msg() {
+        let result = rvs_server_msg(Command::PING("test".to_owned(), None));
+        assert!(result.prefix.is_some());
+        snapshot("20260528_server_msg", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_server_reply() {
+        let result = rvs_server_reply(
+            Response::RPL_WELCOME,
+            vec!["nick".to_owned(), "hi".to_owned()],
+        );
+        assert!(result.prefix.is_some());
+        snapshot("20260528_server_reply", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_nick_prefix() {
+        let result = rvs_nick_prefix("alice", "user1");
+        assert!(matches!(result, Prefix::Nickname(_, _, _)));
+        snapshot("20260528_nick_prefix", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_motd_start() {
+        let result = rvs_build_motd_start("nick");
+        snapshot("20260528_build_motd_start", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_motd_line() {
+        let result = rvs_build_motd_line("nick", "Hello world");
+        snapshot("20260528_build_motd_line", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_motd_end() {
+        let result = rvs_build_motd_end("nick");
+        snapshot("20260528_build_motd_end", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_cap_nak_reply() {
+        let result = rvs_build_cap_nak_reply(Some("multi-prefix".to_owned()));
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_cap_nak_reply", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_nick_change_broadcast() {
+        let result = rvs_build_nick_change_broadcast("oldnick", "user1");
+        assert_eq!(result.len(), 1);
+        snapshot(
+            "20260528_build_nick_change_broadcast",
+            &format!("{result:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260528_build_who_end() {
+        let result = rvs_build_who_end("nick", "*");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_who_end", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_whowas_end() {
+        let result = rvs_build_whowas_end("nick", "someone");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_whowas_end", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_ison_reply() {
+        let result = rvs_build_ison_reply("nick");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_ison_reply", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_channel_mode() {
+        let result = rvs_build_channel_mode("nick", "#12345".to_owned());
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_channel_mode", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_no_topic() {
+        let result = rvs_build_no_topic("nick", "#12345".to_owned());
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_no_topic", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_names_end() {
+        let result = rvs_build_names_end("nick", "#12345");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_names_end", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_list_end() {
+        let result = rvs_build_list_end("nick");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_list_end", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_links_end() {
+        let result = rvs_build_links_end("nick");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_links_end", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_admin_reply() {
+        let result = rvs_build_admin_reply("nick");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_admin_reply", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260528_build_info_reply() {
+        let result = rvs_build_info_reply("nick");
+        assert_eq!(result.len(), 1);
+        snapshot("20260528_build_info_reply", &format!("{result:?}"));
     }
 }

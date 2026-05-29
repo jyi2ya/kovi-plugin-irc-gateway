@@ -1,0 +1,1 @@
+[Message { tags: None, prefix: Some(Nickname("oldnick", "user1", "onebotirc.villv.tech")), command: NICK("oldnick") }]
