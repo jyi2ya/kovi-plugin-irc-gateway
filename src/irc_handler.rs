@@ -4,7 +4,7 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use irc_proto::{Command, Message};
 use kovi::log;
 use kovi::tokio;
-use kovi::tokio::sync::{Mutex, watch};
+use kovi::tokio::sync::Mutex;
 use tokio_util::codec::Decoder;
 
 use crate::error::IrcGatewayError;
@@ -16,12 +16,19 @@ use crate::irc_proto::{
 };
 use crate::onebot::RenderedOnebotMessage;
 
-#[derive(Debug)]
-pub struct ParsedChannel {
-    pub raw: String,
-    pub group_id: Option<i64>,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParsedChannel {
+    Group { raw: String, group_id: i64 },
+    Private { raw: String, peer_id: i64 },
+    Invalid { raw: String },
 }
+
 /// Parses a comma-separated IRC channel list into typed channels.
+///
+/// Channel naming convention:
+/// - `#<digits>` → `Group` (OneBot group chat)
+/// - `##<digits>` → `Private` (OneBot private chat, disguised as a channel)
+/// - anything else → `Invalid`
 pub fn rvs_parse_join_channels(chanlist: &str) -> Vec<ParsedChannel> {
     chanlist
         .split(',')
@@ -30,17 +37,25 @@ pub fn rvs_parse_join_channels(chanlist: &str) -> Vec<ParsedChannel> {
             if ch.is_empty() {
                 return None;
             }
-            let stripped = ch.strip_prefix('#').unwrap_or(ch);
-            let digits = rvs_extract_digits(stripped);
-            let group_id = if digits.is_empty() {
-                None
+            if let Some(stripped) = ch.strip_prefix("##") {
+                match rvs_extract_digits(stripped).parse::<i64>() {
+                    Ok(peer_id) => Some(ParsedChannel::Private {
+                        raw: ch.to_owned(),
+                        peer_id,
+                    }),
+                    Err(_) => Some(ParsedChannel::Invalid { raw: ch.to_owned() }),
+                }
+            } else if let Some(stripped) = ch.strip_prefix('#') {
+                match rvs_extract_digits(stripped).parse::<i64>() {
+                    Ok(group_id) => Some(ParsedChannel::Group {
+                        raw: ch.to_owned(),
+                        group_id,
+                    }),
+                    Err(_) => Some(ParsedChannel::Invalid { raw: ch.to_owned() }),
+                }
             } else {
-                digits.parse::<i64>().ok()
-            };
-            Some(ParsedChannel {
-                raw: ch.to_owned(),
-                group_id,
-            })
+                Some(ParsedChannel::Invalid { raw: ch.to_owned() })
+            }
         })
         .collect()
 }
@@ -82,7 +97,6 @@ where
 pub async fn rvs_handle_irc_messages_ABIMP<IN, OUT, E>(
     mut irc_rx: IN,
     irc_tx: Arc<Mutex<OUT>>,
-    nick_tx: watch::Sender<String>,
     bot: Arc<kovi::RuntimeBot>,
 ) -> Result<(), IrcGatewayError>
 where
@@ -126,7 +140,6 @@ where
             &mut user,
             &mut reg_state,
             &mut cap_negotiating,
-            &nick_tx,
             &bot,
         )
         .await;
@@ -157,7 +170,6 @@ async fn rvs_execute_irc_effects_ABIMP(
     user: &mut String,
     reg_state: &mut RegistrationState,
     cap_negotiating: &mut bool,
-    nick_tx: &watch::Sender<String>,
     bot: &Arc<kovi::RuntimeBot>,
 ) -> Vec<Message> {
     let mut replies = Vec::new();
@@ -168,10 +180,8 @@ async fn rvs_execute_irc_effects_ABIMP(
             IrcCommandEffect::SetUser(u) => *user = u,
             IrcCommandEffect::SetRegState(s) => *reg_state = s,
             IrcCommandEffect::SetCapNegotiating(v) => *cap_negotiating = v,
-            IrcCommandEffect::BroadcastNick(n) => {
-                nick_tx
-                    .send(n)
-                    .expect("never: watch receiver always exists");
+            IrcCommandEffect::BroadcastNick(_n) => {
+                // Nick is no longer broadcast: private chat targets use ##<peer_id> instead.
             }
             IrcCommandEffect::AsyncJoin(chanlist) => {
                 replies.extend(rvs_handle_join_ABIP(nick, user, &chanlist, bot).await);
@@ -196,39 +206,48 @@ async fn rvs_dispatch_irc_command_ABIMP(
     user: &mut String,
     reg_state: &mut RegistrationState,
     cap_negotiating: &mut bool,
-    nick_tx: &watch::Sender<String>,
     bot: &Arc<kovi::RuntimeBot>,
 ) -> Vec<Message> {
     let now_str = rvs_make_now_str_P();
     let effects = rvs_plan_irc_command(command, nick, user, reg_state, *cap_negotiating, &now_str);
-    rvs_execute_irc_effects_ABIMP(
-        effects,
-        nick,
-        user,
-        reg_state,
-        cap_negotiating,
-        nick_tx,
-        bot,
-    )
-    .await
+    rvs_execute_irc_effects_ABIMP(effects, nick, user, reg_state, cap_negotiating, bot).await
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JoinLookup {
+    Group { channel: String, group_id: i64 },
+    Private { channel: String, peer_id: i64 },
 }
 
 fn rvs_plan_join_effects(
     channels: &[ParsedChannel],
     nick: &str,
-) -> (Vec<Message>, Vec<(String, i64)>) {
+) -> (Vec<Message>, Vec<JoinLookup>) {
     let mut immediate = Vec::new();
     let mut lookups = Vec::new();
     for ch in channels {
-        match ch.group_id {
-            Some(id) => lookups.push((ch.raw.clone(), id)),
-            None => immediate.push(rvs_build_no_such_channel(nick, &ch.raw)),
+        match ch {
+            ParsedChannel::Group { raw, group_id } => {
+                lookups.push(JoinLookup::Group {
+                    channel: raw.clone(),
+                    group_id: *group_id,
+                });
+            }
+            ParsedChannel::Private { raw, peer_id } => {
+                lookups.push(JoinLookup::Private {
+                    channel: raw.clone(),
+                    peer_id: *peer_id,
+                });
+            }
+            ParsedChannel::Invalid { raw } => {
+                immediate.push(rvs_build_no_such_channel(nick, raw));
+            }
         }
     }
     (immediate, lookups)
 }
 
-/// Handles a JOIN command: resolves group names and builds join reply messages.
+/// Handles a JOIN command: resolves group/peer names and builds join reply messages.
 ///
 /// # Panics
 ///
@@ -241,17 +260,34 @@ async fn rvs_handle_join_ABIP(
 ) -> Vec<Message> {
     let channels = rvs_parse_join_channels(chanlist);
     let (mut reply, lookups) = rvs_plan_join_effects(&channels, nick);
-    for (_raw, group_id) in lookups {
-        let group_name = match bot.get_group_info(group_id, false).await {
-            Ok(resp) => resp
-                .data
-                .get("group_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown Group")
-                .to_owned(),
-            Err(_) => "无法获取群名".to_owned(),
+    for lookup in lookups {
+        let (channel, topic) = match &lookup {
+            JoinLookup::Group { channel, group_id } => {
+                let name = match bot.get_group_info(*group_id, false).await {
+                    Ok(resp) => resp
+                        .data
+                        .get("group_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown Group")
+                        .to_owned(),
+                    Err(_) => "无法获取群名".to_owned(),
+                };
+                (channel.clone(), name)
+            }
+            JoinLookup::Private { channel, peer_id } => {
+                let name = match bot.get_stranger_info(*peer_id, false).await {
+                    Ok(resp) => resp
+                        .data
+                        .get("nickname")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown User")
+                        .to_owned(),
+                    Err(_) => "无法获取用户信息".to_owned(),
+                };
+                (channel.clone(), name)
+            }
         };
-        reply.extend(rvs_build_join_reply(nick, user, group_id, &group_name));
+        reply.extend(rvs_build_join_reply(nick, user, &channel, &topic));
     }
     reply
 }
@@ -277,13 +313,16 @@ fn rvs_handle_privmsg_IP(target: &str, text: &str, bot: &Arc<kovi::RuntimeBot>) 
 
 /// Forwards OneBot messages to the IRC client as PRIVMSG lines.
 ///
+/// Private chats are disguised as IRC channels with the `##<peer_id>` naming convention
+/// so that IRC clients can give each private chat its own query window keyed on the
+/// numeric QQ id (which avoids UTF-8 nickname issues).
+///
 /// # Panics
 ///
 /// Never panics in practice; the `P` marker is inherited from downstream functions.
 pub async fn rvs_handle_onebot_messages_ABIM<OUT>(
     mut onebot_rx: kovi::tokio::sync::broadcast::Receiver<RenderedOnebotMessage>,
     irc_tx: Arc<Mutex<OUT>>,
-    nick_rx: watch::Receiver<String>,
 ) -> Result<(), IrcGatewayError>
 where
     OUT: Sink<Message> + Unpin,
@@ -303,8 +342,7 @@ where
             }
         };
 
-        let my_nick = nick_rx.borrow().clone();
-        let messages = rvs_render_onebot_to_irc(message, &my_nick);
+        let messages = rvs_render_onebot_to_irc(message);
 
         if let Err(e) = rvs_send_messages_ABIM(&irc_tx, messages).await {
             log::warn!("irc connection broken while forwarding onebot message: {e}");
@@ -313,7 +351,7 @@ where
     }
 }
 
-fn rvs_render_onebot_to_irc(message: RenderedOnebotMessage, my_nick: &str) -> Vec<Message> {
+fn rvs_render_onebot_to_irc(message: RenderedOnebotMessage) -> Vec<Message> {
     use irc_proto::Prefix;
 
     match message {
@@ -349,11 +387,7 @@ fn rvs_render_onebot_to_irc(message: RenderedOnebotMessage, my_nick: &str) -> Ve
                 sender_id.to_string(),
                 rvs_server_name().to_owned(),
             );
-            let target = if my_nick.is_empty() {
-                "you".to_owned()
-            } else {
-                my_nick.to_owned()
-            };
+            let target = format!("##{sender_id}");
             content
                 .into_iter()
                 .filter(|line| !line.is_empty())
@@ -382,13 +416,11 @@ pub async fn rvs_handle_irc_connection_ABIMP(
     let irc_conn = codec.framed(conn);
     let (irc_tx, irc_rx) = irc_conn.split();
     let irc_tx = Arc::new(Mutex::new(irc_tx));
-    let (nick_tx, nick_rx) = watch::channel(String::new());
 
     tokio::select! {
         result = rvs_handle_irc_messages_ABIMP(
             irc_rx,
             irc_tx.clone(),
-            nick_tx,
             bot,
         ) => {
             if let Err(e) = result {
@@ -398,7 +430,6 @@ pub async fn rvs_handle_irc_connection_ABIMP(
         result = rvs_handle_onebot_messages_ABIM(
             onebot_rx,
             irc_tx,
-            nick_rx,
         ) => {
             if let Err(e) = result {
                 log::warn!("onebot message handler error: {e}");
@@ -423,8 +454,13 @@ mod tests {
     fn test_20260418_parse_join_channels_single() {
         let channels = rvs_parse_join_channels("#12345");
         assert_eq!(channels.len(), 1);
-        assert_eq!(channels[0].raw, "#12345");
-        assert_eq!(channels[0].group_id, Some(12345));
+        assert_eq!(
+            channels[0],
+            ParsedChannel::Group {
+                raw: "#12345".to_owned(),
+                group_id: 12345,
+            }
+        );
         snapshot(
             "20260418_parse_join_channels_single",
             &format!("{:?}", channels),
@@ -435,8 +471,20 @@ mod tests {
     fn test_20260418_parse_join_channels_multiple() {
         let channels = rvs_parse_join_channels("#12345,#67890");
         assert_eq!(channels.len(), 2);
-        assert_eq!(channels[0].group_id, Some(12345));
-        assert_eq!(channels[1].group_id, Some(67890));
+        assert_eq!(
+            channels[0],
+            ParsedChannel::Group {
+                raw: "#12345".to_owned(),
+                group_id: 12345,
+            }
+        );
+        assert_eq!(
+            channels[1],
+            ParsedChannel::Group {
+                raw: "#67890".to_owned(),
+                group_id: 67890,
+            }
+        );
         snapshot(
             "20260418_parse_join_channels_multiple",
             &format!("{:?}", channels),
@@ -447,11 +495,54 @@ mod tests {
     fn test_20260418_parse_join_channels_invalid() {
         let channels = rvs_parse_join_channels("#abc,#12345");
         assert_eq!(channels.len(), 2);
-        assert_eq!(channels[0].group_id, None);
-        assert_eq!(channels[0].raw, "#abc");
-        assert_eq!(channels[1].group_id, Some(12345));
+        assert_eq!(
+            channels[0],
+            ParsedChannel::Invalid {
+                raw: "#abc".to_owned(),
+            }
+        );
+        assert_eq!(
+            channels[1],
+            ParsedChannel::Group {
+                raw: "#12345".to_owned(),
+                group_id: 12345,
+            }
+        );
         snapshot(
             "20260418_parse_join_channels_invalid",
+            &format!("{:?}", channels),
+        );
+    }
+
+    #[test]
+    fn test_20260418_parse_join_channels_private_double_hash() {
+        let channels = rvs_parse_join_channels("##67890");
+        assert_eq!(channels.len(), 1);
+        assert_eq!(
+            channels[0],
+            ParsedChannel::Private {
+                raw: "##67890".to_owned(),
+                peer_id: 67890,
+            }
+        );
+        snapshot(
+            "20260418_parse_join_channels_private_double_hash",
+            &format!("{:?}", channels),
+        );
+    }
+
+    #[test]
+    fn test_20260418_parse_join_channels_private_invalid() {
+        let channels = rvs_parse_join_channels("##abc");
+        assert_eq!(channels.len(), 1);
+        assert_eq!(
+            channels[0],
+            ParsedChannel::Invalid {
+                raw: "##abc".to_owned(),
+            }
+        );
+        snapshot(
+            "20260418_parse_join_channels_private_invalid",
             &format!("{:?}", channels),
         );
     }
@@ -467,8 +558,12 @@ mod tests {
     fn test_20260418_parse_join_channels_no_hash() {
         let channels = rvs_parse_join_channels("12345");
         assert_eq!(channels.len(), 1);
-        assert_eq!(channels[0].group_id, Some(12345));
-        assert_eq!(channels[0].raw, "12345");
+        assert_eq!(
+            channels[0],
+            ParsedChannel::Invalid {
+                raw: "12345".to_owned(),
+            }
+        );
         snapshot(
             "20260418_parse_join_channels_no_hash",
             &format!("{:?}", channels),
@@ -481,8 +576,20 @@ mod tests {
         let (replies, lookups) = rvs_plan_join_effects(&channels, "nick");
         assert!(replies.is_empty());
         assert_eq!(lookups.len(), 2);
-        assert_eq!(lookups[0], ("#111".to_owned(), 111));
-        assert_eq!(lookups[1], ("#222".to_owned(), 222));
+        assert_eq!(
+            lookups[0],
+            JoinLookup::Group {
+                channel: "#111".to_owned(),
+                group_id: 111,
+            }
+        );
+        assert_eq!(
+            lookups[1],
+            JoinLookup::Group {
+                channel: "#222".to_owned(),
+                group_id: 222,
+            }
+        );
         snapshot(
             "20260418_plan_join_effects_all_valid",
             &format!("{lookups:?}"),
@@ -491,11 +598,24 @@ mod tests {
 
     #[test]
     fn test_20260418_plan_join_effects_mixed() {
-        let channels = rvs_parse_join_channels("#abc,#123");
+        let channels = rvs_parse_join_channels("#abc,#123,##456");
         let (replies, lookups) = rvs_plan_join_effects(&channels, "nick");
         assert_eq!(replies.len(), 1);
-        assert_eq!(lookups.len(), 1);
-        assert_eq!(lookups[0].1, 123);
+        assert_eq!(lookups.len(), 2);
+        assert_eq!(
+            lookups[0],
+            JoinLookup::Group {
+                channel: "#123".to_owned(),
+                group_id: 123,
+            }
+        );
+        assert_eq!(
+            lookups[1],
+            JoinLookup::Private {
+                channel: "##456".to_owned(),
+                peer_id: 456,
+            }
+        );
         snapshot(
             "20260418_plan_join_effects_mixed",
             &format!("replies={replies:?}, lookups={lookups:?}"),
@@ -531,7 +651,7 @@ mod tests {
             group_id: 12345,
             sender_id: 100,
         };
-        let result = rvs_render_onebot_to_irc(msg, "bot");
+        let result = rvs_render_onebot_to_irc(msg);
         assert_eq!(result.len(), 1);
         snapshot(
             "20260528_render_onebot_to_irc_group",
@@ -546,7 +666,7 @@ mod tests {
             sender_id: 100,
             sender_name: "Bob".to_owned(),
         };
-        let result = rvs_render_onebot_to_irc(msg, "bot");
+        let result = rvs_render_onebot_to_irc(msg);
         assert_eq!(result.len(), 1);
         snapshot(
             "20260528_render_onebot_to_irc_private",

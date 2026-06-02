@@ -225,16 +225,24 @@ pub enum PrivmsgTarget {
 }
 
 /// Resolves a PRIVMSG target string into a Group, Private, or Invalid target.
+///
+/// Convention:
+/// - `##<digits>` → `Private(<digits>)` (OneBot private chat with a QQ user)
+/// - `#<digits>` → `Group(<digits>)` (OneBot group chat)
+/// - anything else → `Invalid`
 pub fn rvs_resolve_privmsg_target(target: &str) -> PrivmsgTarget {
-    let (raw, prefixed) = match target.strip_prefix('#') {
-        Some(s) => (s, true),
-        None => (target, false),
-    };
-    let digits = rvs_extract_digits(raw);
-    match digits.parse::<i64>() {
-        Ok(id) if prefixed => PrivmsgTarget::Group(id),
-        Ok(id) if !prefixed => PrivmsgTarget::Private(id),
-        _ => PrivmsgTarget::Invalid(target.to_owned()),
+    if let Some(stripped) = target.strip_prefix("##") {
+        match rvs_extract_digits(stripped).parse::<i64>() {
+            Ok(id) => PrivmsgTarget::Private(id),
+            Err(_) => PrivmsgTarget::Invalid(target.to_owned()),
+        }
+    } else if let Some(stripped) = target.strip_prefix('#') {
+        match rvs_extract_digits(stripped).parse::<i64>() {
+            Ok(id) => PrivmsgTarget::Group(id),
+            Err(_) => PrivmsgTarget::Invalid(target.to_owned()),
+        }
+    } else {
+        PrivmsgTarget::Invalid(target.to_owned())
     }
 }
 
@@ -297,17 +305,11 @@ pub fn rvs_build_nick_change_broadcast(nick: &str, user: &str) -> Vec<Message> {
 
 /// Builds the JOIN reply sequence: join event, topic, names reply, and end-of-names.
 ///
-/// # Panics
-///
-/// Never panics in practice; all operations are non-fallible string formatting.
-pub fn rvs_build_join_reply(
-    nick: &str,
-    user: &str,
-    group_id: i64,
-    group_name: &str,
-) -> Vec<Message> {
-    debug_assert!(group_id > 0, "group_id must be positive");
-    let chan = format!("#{group_id}");
+/// `channel` is the raw IRC channel name as it should appear in the response
+/// (e.g. `#12345` for groups, `##67890` for private chats disguised as channels).
+/// `topic` is the display name carried in RPL_TOPIC.
+pub fn rvs_build_join_reply(nick: &str, user: &str, channel: &str, topic: &str) -> Vec<Message> {
+    let chan = channel.to_owned();
     vec![
         rvs_prefixed(
             rvs_nick_prefix(nick, user),
@@ -315,7 +317,7 @@ pub fn rvs_build_join_reply(
         ),
         rvs_server_reply(
             Response::RPL_TOPIC,
-            vec![nick.to_owned(), chan.clone(), group_name.to_owned()],
+            vec![nick.to_owned(), chan.clone(), topic.to_owned()],
         ),
         rvs_server_reply(
             Response::RPL_NAMREPLY,
@@ -983,9 +985,16 @@ mod tests {
 
     #[test]
     fn test_20260418_build_join_reply() {
-        let msgs = rvs_build_join_reply("nick", "user", 12345, "TestGroup");
+        let msgs = rvs_build_join_reply("nick", "user", "#12345", "TestGroup");
         assert_eq!(msgs.len(), 4);
         snapshot("20260418_build_join_reply", &format!("{:?}", msgs));
+    }
+
+    #[test]
+    fn test_20260418_build_join_reply_private() {
+        let msgs = rvs_build_join_reply("nick", "user", "##67890", "Alice");
+        assert_eq!(msgs.len(), 4);
+        snapshot("20260418_build_join_reply_private", &format!("{:?}", msgs));
     }
 
     #[test]
@@ -1075,11 +1084,11 @@ mod tests {
     }
 
     #[test]
-    fn test_20260418_resolve_privmsg_target_private() {
-        let result = rvs_resolve_privmsg_target("67890");
+    fn test_20260418_resolve_privmsg_target_private_double_hash() {
+        let result = rvs_resolve_privmsg_target("##67890");
         assert_eq!(result, PrivmsgTarget::Private(67890));
         snapshot(
-            "20260418_resolve_privmsg_target_private",
+            "20260418_resolve_privmsg_target_private_double_hash",
             &format!("{:?}", result),
         );
     }
@@ -1100,6 +1109,16 @@ mod tests {
         assert!(matches!(result, PrivmsgTarget::Invalid(_)));
         snapshot(
             "20260418_resolve_privmsg_target_invalid_no_hash",
+            &format!("{:?}", result),
+        );
+    }
+
+    #[test]
+    fn test_20260418_resolve_privmsg_target_invalid_double_hash() {
+        let result = rvs_resolve_privmsg_target("##abc");
+        assert!(matches!(result, PrivmsgTarget::Invalid(_)));
+        snapshot(
+            "20260418_resolve_privmsg_target_invalid_double_hash",
             &format!("{:?}", result),
         );
     }

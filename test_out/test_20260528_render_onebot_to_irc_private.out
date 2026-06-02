@@ -1,1 +1,1 @@
-[Message { tags: None, prefix: Some(Nickname("Bob", "100", "onebotirc.villv.tech")), command: PRIVMSG("bot", "hello") }]
+[Message { tags: None, prefix: Some(Nickname("Bob", "100", "onebotirc.villv.tech")), command: PRIVMSG("##100", "hello") }]
