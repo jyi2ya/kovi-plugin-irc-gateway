@@ -28,7 +28,7 @@ async fn rvs_plugin_main_ABIMPS() {
         .expect("never: config is valid TOML with defaults");
 
     let broadcast_tx = kovi::tokio::sync::broadcast::Sender::new(16);
-    let _irc = kovi::spawn(server::rvs_irc_server_main_ABIMP(
+    let _irc = kovi::spawn(server::rvs_irc_server_main_ABIMPS(
         config.bind_addr,
         config.user_options,
         Default::default(),

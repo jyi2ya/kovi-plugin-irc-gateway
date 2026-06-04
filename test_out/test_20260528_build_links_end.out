@@ -1,1 +1,1 @@
-[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_ENDOFLINKS, ["nick", "*", "End of /LINKS list."]) }]
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_ENDOFLINKS, ["nick", "*", "/LINKS 列表结束"]) }]

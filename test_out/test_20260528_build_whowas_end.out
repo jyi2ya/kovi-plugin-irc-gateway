@@ -1,1 +1,1 @@
-[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_ENDOFWHOWAS, ["nick", "someone", "End of WHOWAS."]) }]
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_ENDOFWHOWAS, ["nick", "someone", "WHOWAS 列表结束"]) }]

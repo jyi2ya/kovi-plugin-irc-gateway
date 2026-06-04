@@ -1,1 +1,1 @@
-[LogDebug("ignoring command before registration: JOIN(\"#12345\", None, None)")]
+[Reply([Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(ERR_NOTREGISTERED, ["*", "您尚未注册"]) }]), LogDebug("ignoring command before registration: JOIN(\"#12345\", None, None)")]

@@ -39,6 +39,7 @@ impl Default for Config {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions may panic")]
 mod tests {
     use super::*;
 

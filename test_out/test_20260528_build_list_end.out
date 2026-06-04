@@ -1,1 +1,1 @@
-[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_LISTEND, ["nick", "End of /LIST"]) }]
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_LISTEND, ["nick", "/LIST 列表结束"]) }]

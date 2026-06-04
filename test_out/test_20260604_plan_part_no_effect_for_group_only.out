@@ -1,0 +1,1 @@
+[Reply([Message { tags: None, prefix: Some(Nickname("nick", "user", "onebotirc.villv.tech")), command: PART("#123", None) }, Message { tags: None, prefix: Some(Nickname("nick", "user", "onebotirc.villv.tech")), command: PART("#456", None) }])]

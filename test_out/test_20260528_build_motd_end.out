@@ -1,1 +1,1 @@
-Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_ENDOFMOTD, ["nick", "End of /MOTD command."]) }
+Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_ENDOFMOTD, ["nick", "/MOTD 结束"]) }

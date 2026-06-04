@@ -1,1 +1,1 @@
-[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_INFO, ["nick", "QQ IRC Gateway by kovi"]) }]
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_INFO, ["nick", "QQ IRC 网关 (kovi)"]) }]

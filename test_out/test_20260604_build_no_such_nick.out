@@ -1,0 +1,1 @@
+Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(ERR_NOSUCHNICK, ["nick", "target", "无此昵称/频道"]) }

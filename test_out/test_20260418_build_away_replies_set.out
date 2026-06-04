@@ -1,1 +1,1 @@
-[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_NOWAWAY, ["nick", "You have been marked as being away"]) }]
+[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(RPL_NOWAWAY, ["nick", "您已被标记为离开"]) }]

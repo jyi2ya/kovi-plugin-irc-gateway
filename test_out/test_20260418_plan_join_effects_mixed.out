@@ -1,1 +1,1 @@
-replies=[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(ERR_NOSUCHCHANNEL, ["nick", "#abc", "No such channel"]) }], lookups=[Group { channel: "#123", group_id: 123 }, Private { channel: "##456", peer_id: 456 }]
+replies=[Message { tags: None, prefix: Some(ServerName("onebotirc.villv.tech")), command: Response(ERR_NOSUCHCHANNEL, ["nick", "#abc", "无此频道"]) }], lookups=[Group { channel: "#123", group_id: 123 }, Private { channel: "##456", peer_id: 456 }]

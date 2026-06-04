@@ -10,9 +10,10 @@ pub enum IrcCommandEffect {
     SetUser(String),
     SetRegState(RegistrationState),
     SetCapNegotiating(bool),
-    BroadcastNick(String),
     AsyncJoin(String),
     SendPrivmsg { target: String, text: String },
+    PartPrivate(Vec<i64>),
+    Quit,
     LogDebug(String),
 }
 
@@ -75,7 +76,7 @@ pub fn rvs_build_motd_line(nick: &str, line: &str) -> Message {
 pub fn rvs_build_motd_end(nick: &str) -> Message {
     rvs_server_reply(
         Response::RPL_ENDOFMOTD,
-        vec![nick.to_owned(), "End of /MOTD command.".to_owned()],
+        vec![nick.to_owned(), "/MOTD 结束".to_owned()],
     )
 }
 
@@ -134,10 +135,8 @@ pub fn rvs_format_utc_timestamp(secs: u64) -> String {
 
 /// Returns the current UTC time as seconds since the Unix epoch.
 ///
-/// # Panics
-///
-/// Never panics in practice; `duration_since` failure is handled via `unwrap_or(0)`.
-pub fn rvs_current_utc_secs_P() -> u64 {
+/// Reads the system clock (side effect).
+pub fn rvs_current_utc_secs_S() -> u64 {
     use std::time::{SystemTime, UNIX_EPOCH};
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -146,28 +145,25 @@ pub fn rvs_current_utc_secs_P() -> u64 {
 }
 
 /// Builds the full registration welcome burst (001-005, ISUPPORT, MOTD).
-pub fn rvs_build_welcome_burst(nick: &str, now_str: &str) -> Vec<Message> {
+pub fn rvs_build_welcome_burst(nick: &str, user: &str, now_str: &str) -> Vec<Message> {
     vec![
         rvs_server_reply(
             Response::RPL_WELCOME,
             vec![
                 nick.to_owned(),
-                format!("Welcome to the QQ IRC Gateway {nick}!{nick}@{SERVER_NAME}"),
+                format!("欢迎来到 QQ IRC 网关 {nick}!{user}@{SERVER_NAME}"),
             ],
         ),
         rvs_server_reply(
             Response::RPL_YOURHOST,
             vec![
                 nick.to_owned(),
-                format!("Your host is {SERVER_NAME}, running version {SERVER_VERSION}"),
+                format!("您的主机是 {SERVER_NAME}，运行版本 {SERVER_VERSION}"),
             ],
         ),
         rvs_server_reply(
             Response::RPL_CREATED,
-            vec![
-                nick.to_owned(),
-                format!("This server was created {now_str}"),
-            ],
+            vec![nick.to_owned(), format!("此服务器创建于 {now_str}")],
         ),
         rvs_server_reply(
             Response::RPL_MYINFO,
@@ -188,12 +184,13 @@ pub fn rvs_build_welcome_burst(nick: &str, now_str: &str) -> Vec<Message> {
                 "CHANMODES=,,,m".to_owned(),
                 "PREFIX=(o)@".to_owned(),
                 "NICKLEN=30".to_owned(),
-                "are supported by this server".to_owned(),
+                "此服务器支持".to_owned(),
             ],
         ),
         rvs_build_motd_start(nick),
-        rvs_build_motd_line(nick, "Welcome to the QQ IRC Gateway!"),
-        rvs_build_motd_line(nick, "Join a QQ group channel with: /JOIN #<group_id>"),
+        rvs_build_motd_line(nick, "欢迎来到 QQ IRC 网关！"),
+        rvs_build_motd_line(nick, "/JOIN #<群号> 加入群聊频道"),
+        rvs_build_motd_line(nick, "/JOIN ##<QQ号> 私聊频道（首次发消息时自动加入）"),
         rvs_build_motd_end(nick),
     ]
 }
@@ -203,7 +200,19 @@ pub fn rvs_extract_digits(value: &str) -> String {
     value.chars().filter(|c| c.is_ascii_digit()).collect()
 }
 
-#[expect(dead_code, reason = "utility function for parsing prefixed numbers")]
+/// Returns the numeric channel id if the entire input consists of ASCII digits.
+pub fn rvs_extract_channel_id(value: &str) -> Option<i64> {
+    if value.is_empty() || !value.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
+}
+
+#[expect(
+    clippy::allow_attributes,
+    reason = "dead_code needs #[allow] because tests use this function"
+)]
+#[allow(dead_code, reason = "utility function for parsing prefixed numbers")]
 /// Parses the first contiguous digit sequence from `value` into a numeric type `N`.
 pub fn rvs_parse_prefix_number<N>(value: &str) -> Option<N>
 where
@@ -232,14 +241,14 @@ pub enum PrivmsgTarget {
 /// - anything else → `Invalid`
 pub fn rvs_resolve_privmsg_target(target: &str) -> PrivmsgTarget {
     if let Some(stripped) = target.strip_prefix("##") {
-        match rvs_extract_digits(stripped).parse::<i64>() {
-            Ok(id) => PrivmsgTarget::Private(id),
-            Err(_) => PrivmsgTarget::Invalid(target.to_owned()),
+        match rvs_extract_channel_id(stripped) {
+            Some(id) => PrivmsgTarget::Private(id),
+            None => PrivmsgTarget::Invalid(target.to_owned()),
         }
     } else if let Some(stripped) = target.strip_prefix('#') {
-        match rvs_extract_digits(stripped).parse::<i64>() {
-            Ok(id) => PrivmsgTarget::Group(id),
-            Err(_) => PrivmsgTarget::Invalid(target.to_owned()),
+        match rvs_extract_channel_id(stripped) {
+            Some(id) => PrivmsgTarget::Group(id),
+            None => PrivmsgTarget::Invalid(target.to_owned()),
         }
     } else {
         PrivmsgTarget::Invalid(target.to_owned())
@@ -259,11 +268,21 @@ impl RegistrationState {
     }
 }
 
-/// Strips whitespace and ASCII punctuation from a raw nickname.
+/// Strips characters that are not valid in IRC nicknames.
+///
+/// Keeps letters, digits, IRC special characters `[\\]^_{|}~-`, and all
+/// non-ASCII characters (e.g. Chinese).
 pub fn rvs_sanitize_nick(raw: &str) -> String {
     raw.chars()
-        .filter(|c| !c.is_whitespace() && !c.is_ascii_punctuation())
-        .collect::<String>()
+        .filter(|c| {
+            c.is_alphanumeric()
+                || matches!(
+                    *c,
+                    '[' | ']' | '\\' | '_' | '^' | '{' | '}' | '|' | '~' | '-'
+                )
+                || !c.is_ascii()
+        })
+        .collect()
 }
 
 /// Builds a CAP LS reply advertising no capabilities.
@@ -330,11 +349,7 @@ pub fn rvs_build_join_reply(nick: &str, user: &str, channel: &str, topic: &str) 
         ),
         rvs_server_reply(
             Response::RPL_ENDOFNAMES,
-            vec![
-                nick.to_owned(),
-                chan.clone(),
-                "End of /NAMES list.".to_owned(),
-            ],
+            vec![nick.to_owned(), chan.clone(), "/NAMES 列表结束".to_owned()],
         ),
     ]
 }
@@ -343,10 +358,18 @@ pub fn rvs_build_join_reply(nick: &str, user: &str, channel: &str, topic: &str) 
 pub fn rvs_build_no_such_channel(nick: &str, channel: &str) -> Message {
     rvs_server_reply(
         Response::ERR_NOSUCHCHANNEL,
+        vec![nick.to_owned(), channel.to_owned(), "无此频道".to_owned()],
+    )
+}
+
+/// Builds an ERR_NOSUCHNICK error reply.
+pub fn rvs_build_no_such_nick(nick: &str, target: &str) -> Message {
+    rvs_server_reply(
+        Response::ERR_NOSUCHNICK,
         vec![
             nick.to_owned(),
-            channel.to_owned(),
-            "No such channel".to_owned(),
+            target.to_owned(),
+            "无此昵称/频道".to_owned(),
         ],
     )
 }
@@ -368,11 +391,7 @@ pub fn rvs_build_part_broadcast(
 pub fn rvs_build_who_end(nick: &str, mask: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_ENDOFWHO,
-        vec![
-            nick.to_owned(),
-            mask.to_owned(),
-            "End of /WHO list.".to_owned(),
-        ],
+        vec![nick.to_owned(), mask.to_owned(), "/WHO 列表结束".to_owned()],
     )]
 }
 
@@ -396,7 +415,7 @@ pub fn rvs_build_whois_reply(nick: &str, user: &str, mask: &str) -> Vec<Message>
                 nick.to_owned(),
                 mask.to_owned(),
                 rvs_server_name().to_owned(),
-                "QQ IRC Gateway".to_owned(),
+                "QQ IRC 网关".to_owned(),
             ],
         ),
         rvs_server_reply(
@@ -404,7 +423,7 @@ pub fn rvs_build_whois_reply(nick: &str, user: &str, mask: &str) -> Vec<Message>
             vec![
                 nick.to_owned(),
                 mask.to_owned(),
-                "End of /WHOIS list.".to_owned(),
+                "/WHOIS 列表结束".to_owned(),
             ],
         ),
     ]
@@ -417,7 +436,7 @@ pub fn rvs_build_whowas_end(nick: &str, nicklist: &str) -> Vec<Message> {
         vec![
             nick.to_owned(),
             nicklist.to_owned(),
-            "End of WHOWAS.".to_owned(),
+            "WHOWAS 列表结束".to_owned(),
         ],
     )]
 }
@@ -454,7 +473,7 @@ pub fn rvs_build_channel_mode(nick: &str, channel: String) -> Vec<Message> {
 pub fn rvs_build_no_topic(nick: &str, channel: String) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_NOTOPIC,
-        vec![nick.to_owned(), channel, "No topic is set.".to_owned()],
+        vec![nick.to_owned(), channel, "未设置主题".to_owned()],
     )]
 }
 
@@ -465,7 +484,7 @@ pub fn rvs_build_names_end(nick: &str, chan: &str) -> Vec<Message> {
         vec![
             nick.to_owned(),
             chan.to_owned(),
-            "End of /NAMES list.".to_owned(),
+            "/NAMES 列表结束".to_owned(),
         ],
     )]
 }
@@ -474,7 +493,7 @@ pub fn rvs_build_names_end(nick: &str, chan: &str) -> Vec<Message> {
 pub fn rvs_build_list_end(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_LISTEND,
-        vec![nick.to_owned(), "End of /LIST".to_owned()],
+        vec![nick.to_owned(), "/LIST 列表结束".to_owned()],
     )]
 }
 
@@ -482,8 +501,9 @@ pub fn rvs_build_list_end(nick: &str) -> Vec<Message> {
 pub fn rvs_build_motd_burst(nick: &str) -> Vec<Message> {
     vec![
         rvs_build_motd_start(nick),
-        rvs_build_motd_line(nick, "Welcome to the QQ IRC Gateway!"),
-        rvs_build_motd_line(nick, "Join a QQ group channel with: /JOIN #<group_id>"),
+        rvs_build_motd_line(nick, "欢迎来到 QQ IRC 网关！"),
+        rvs_build_motd_line(nick, "/JOIN #<群号> 加入群聊频道"),
+        rvs_build_motd_line(nick, "/JOIN ##<QQ号> 私聊频道（首次发消息时自动加入）"),
         rvs_build_motd_end(nick),
     ]
 }
@@ -496,7 +516,7 @@ pub fn rvs_build_version_reply(nick: &str) -> Vec<Message> {
             nick.to_owned(),
             rvs_server_version().to_owned(),
             rvs_server_name().to_owned(),
-            "QQ IRC Gateway".to_owned(),
+            "QQ IRC 网关".to_owned(),
         ],
     )]
 }
@@ -517,7 +537,7 @@ pub fn rvs_build_time_reply(nick: &str, now_str: &str) -> Vec<Message> {
 pub fn rvs_build_info_reply(nick: &str) -> Vec<Message> {
     vec![rvs_server_reply(
         Response::RPL_INFO,
-        vec![nick.to_owned(), "QQ IRC Gateway by kovi".to_owned()],
+        vec![nick.to_owned(), "QQ IRC 网关 (kovi)".to_owned()],
     )]
 }
 
@@ -526,11 +546,11 @@ pub fn rvs_build_lusers_reply(nick: &str) -> Vec<Message> {
     vec![
         rvs_server_reply(
             Response::RPL_LUSERCLIENT,
-            vec![nick.to_owned(), "There is 1 user on 1 server".to_owned()],
+            vec![nick.to_owned(), "当前 1 个用户，1 个服务器".to_owned()],
         ),
         rvs_server_reply(
             Response::RPL_LUSERME,
-            vec![nick.to_owned(), "I have 1 client and 0 servers".to_owned()],
+            vec![nick.to_owned(), "1 个客户端，0 个服务器".to_owned()],
         ),
     ]
 }
@@ -542,7 +562,7 @@ pub fn rvs_build_links_end(nick: &str) -> Vec<Message> {
         vec![
             nick.to_owned(),
             "*".to_owned(),
-            "End of /LINKS list.".to_owned(),
+            "/LINKS 列表结束".to_owned(),
         ],
     )]
 }
@@ -560,17 +580,11 @@ pub fn rvs_build_away_replies(nick: &str, msg: Option<&String>) -> Vec<Message> 
     match msg {
         None => vec![rvs_server_reply(
             Response::RPL_UNAWAY,
-            vec![
-                nick.to_owned(),
-                "You are no longer marked as being away".to_owned(),
-            ],
+            vec![nick.to_owned(), "您已取消离开状态".to_owned()],
         )],
         Some(_) => vec![rvs_server_reply(
             Response::RPL_NOWAWAY,
-            vec![
-                nick.to_owned(),
-                "You have been marked as being away".to_owned(),
-            ],
+            vec![nick.to_owned(), "您已被标记为离开".to_owned()],
         )],
     }
 }
@@ -596,6 +610,18 @@ pub fn rvs_handle_part(
         ));
     }
     reply
+}
+
+/// Returns the peer IDs of private-chat channels (##<digits>) in a PART channel list.
+fn rvs_plan_part_private(chanlist: &str) -> Vec<i64> {
+    chanlist
+        .split(',')
+        .filter_map(|ch| {
+            let ch = ch.trim();
+            let stripped = ch.strip_prefix("##")?;
+            rvs_extract_channel_id(stripped)
+        })
+        .collect()
 }
 
 /// Pure decision function: maps an IRC command to a list of effects without performing I/O.
@@ -630,9 +656,8 @@ pub fn rvs_plan_irc_command(
                 } = reg_state
                 {
                     effects.push(IrcCommandEffect::SetRegState(RegistrationState::Registered));
-                    effects.push(IrcCommandEffect::BroadcastNick(nick.to_owned()));
                     effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(
-                        nick, now_str,
+                        nick, user, now_str,
                     )));
                 }
                 effects
@@ -649,9 +674,8 @@ pub fn rvs_plan_irc_command(
                 } => {
                     if *got_user && !cap_negotiating {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Registered));
-                        effects.push(IrcCommandEffect::BroadcastNick(new_nick.clone()));
                         effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(
-                            new_nick, now_str,
+                            new_nick, user, now_str,
                         )));
                     } else {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Pending {
@@ -661,7 +685,6 @@ pub fn rvs_plan_irc_command(
                     }
                 }
                 RegistrationState::Registered => {
-                    effects.push(IrcCommandEffect::BroadcastNick(new_nick.clone()));
                     effects.push(IrcCommandEffect::Reply(rvs_build_nick_change_broadcast(
                         new_nick, user,
                     )));
@@ -679,9 +702,8 @@ pub fn rvs_plan_irc_command(
                 } => {
                     if *got_nick && !cap_negotiating {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Registered));
-                        effects.push(IrcCommandEffect::BroadcastNick(nick.to_owned()));
                         effects.push(IrcCommandEffect::Reply(rvs_build_welcome_burst(
-                            nick, now_str,
+                            nick, new_user, now_str,
                         )));
                     } else {
                         effects.push(IrcCommandEffect::SetRegState(RegistrationState::Pending {
@@ -704,13 +726,22 @@ pub fn rvs_plan_irc_command(
             ))]
         }
 
-        Command::QUIT(_) => vec![],
+        Command::QUIT(_) => vec![
+            IrcCommandEffect::Reply(vec![Message::from(Command::ERROR("再见".to_owned()))]),
+            IrcCommandEffect::Quit,
+        ],
 
         _ if !reg_state.rvs_is_registered() => {
-            vec![IrcCommandEffect::LogDebug(format!(
-                "ignoring command before registration: {:?}",
-                command
-            ))]
+            vec![
+                IrcCommandEffect::Reply(vec![rvs_server_reply(
+                    Response::ERR_NOTREGISTERED,
+                    vec!["*".to_owned(), "您尚未注册".to_owned()],
+                )]),
+                IrcCommandEffect::LogDebug(format!(
+                    "ignoring command before registration: {:?}",
+                    command
+                )),
+            ]
         }
 
         Command::JOIN(chanlist, _chankeys, _realname) => {
@@ -718,9 +749,14 @@ pub fn rvs_plan_irc_command(
         }
 
         Command::PART(chanlist, comment) => {
-            vec![IrcCommandEffect::Reply(rvs_handle_part(
+            let mut effects = vec![IrcCommandEffect::Reply(rvs_handle_part(
                 nick, user, chanlist, comment,
-            ))]
+            ))];
+            let peer_ids = rvs_plan_part_private(chanlist);
+            if !peer_ids.is_empty() {
+                effects.push(IrcCommandEffect::PartPrivate(peer_ids));
+            }
+            effects
         }
 
         Command::PRIVMSG(target, text) => {
@@ -773,7 +809,14 @@ pub fn rvs_plan_irc_command(
                 nick,
                 channel.clone(),
             ))],
-            Some(_) => vec![],
+            Some(_) => vec![IrcCommandEffect::Reply(vec![rvs_server_reply(
+                Response::ERR_CHANOPRIVSNEEDED,
+                vec![
+                    nick.to_owned(),
+                    channel.clone(),
+                    "您不是频道操作员".to_owned(),
+                ],
+            )])],
         },
 
         Command::NAMES(chanlist, _target) => {
@@ -822,9 +865,15 @@ pub fn rvs_plan_irc_command(
             ))]
         }
 
-        Command::INVITE(_nickname, _channel) => vec![],
+        Command::INVITE(_nickname, _channel) => vec![IrcCommandEffect::LogDebug(
+            "INVITE is not supported".to_owned(),
+        )],
 
-        Command::KICK(_chanlist, _userlist, _comment) => vec![],
+        Command::KICK(_chanlist, _userlist, _comment) => {
+            vec![IrcCommandEffect::LogDebug(
+                "KICK is not supported".to_owned(),
+            )]
+        }
 
         unknown => {
             vec![IrcCommandEffect::LogDebug(format!(
@@ -836,6 +885,7 @@ pub fn rvs_plan_irc_command(
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "test assertions may panic")]
 mod tests {
     use super::*;
 
@@ -944,6 +994,23 @@ mod tests {
     }
 
     #[test]
+    fn test_20260604_sanitize_nick_preserves_irc_special() {
+        assert_eq!(rvs_sanitize_nick("user_1"), "user_1");
+        assert_eq!(rvs_sanitize_nick("hello-world"), "hello-world");
+        assert_eq!(rvs_sanitize_nick("nick[1]"), "nick[1]");
+        assert_eq!(rvs_sanitize_nick("a{b}c"), "a{b}c");
+        assert_eq!(rvs_sanitize_nick("x|y"), "x|y");
+        assert_eq!(rvs_sanitize_nick("a^b"), "a^b");
+        assert_eq!(rvs_sanitize_nick("hello~world"), "hello~world");
+        assert_eq!(rvs_sanitize_nick("a\\b"), "a\\b");
+        assert_eq!(rvs_sanitize_nick("a!b@c#d"), "abcd");
+        snapshot(
+            "20260604_sanitize_nick_preserves_irc_special",
+            "all IRC special chars preserved",
+        );
+    }
+
+    #[test]
     fn test_20260418_registration_state() {
         let mut state = RegistrationState::Pending {
             got_nick: false,
@@ -971,7 +1038,7 @@ mod tests {
 
     #[test]
     fn test_20260418_build_welcome_burst() {
-        let msgs = rvs_build_welcome_burst("testnick", "2024-01-01T00:00:00Z");
+        let msgs = rvs_build_welcome_burst("testnick", "testuser", "2024-01-01T00:00:00Z");
         assert!(!msgs.is_empty());
         snapshot("20260418_build_welcome_burst", &format!("{:?}", msgs));
     }
@@ -979,7 +1046,7 @@ mod tests {
     #[test]
     fn test_20260418_build_motd_burst() {
         let msgs = rvs_build_motd_burst("testnick");
-        assert_eq!(msgs.len(), 4);
+        assert_eq!(msgs.len(), 5);
         snapshot("20260418_build_motd_burst", &format!("{:?}", msgs));
     }
 
@@ -1071,6 +1138,24 @@ mod tests {
             "20260418_extract_digits",
             "empty, abc, 12345, #12345, group123",
         );
+    }
+
+    #[test]
+    fn test_20260604_extract_channel_id() {
+        assert_eq!(rvs_extract_channel_id(""), None);
+        assert_eq!(rvs_extract_channel_id("abc"), None);
+        assert_eq!(rvs_extract_channel_id("12345"), Some(12345));
+        assert_eq!(rvs_extract_channel_id("12abc"), None);
+        assert_eq!(rvs_extract_channel_id("0"), Some(0));
+        let result = format!(
+            "{:?}, {:?}, {:?}, {:?}, {:?}",
+            rvs_extract_channel_id(""),
+            rvs_extract_channel_id("abc"),
+            rvs_extract_channel_id("12345"),
+            rvs_extract_channel_id("12abc"),
+            rvs_extract_channel_id("0"),
+        );
+        snapshot("20260604_extract_channel_id", &result);
     }
 
     #[test]
@@ -1200,7 +1285,7 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_)))
+                .any(|e| matches!(e, IrcCommandEffect::SetNick(_)))
         );
         snapshot(
             "20260418_plan_nick_after_user_completes_registration",
@@ -1397,7 +1482,7 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|e| matches!(e, IrcCommandEffect::BroadcastNick(_)))
+                .any(|e| matches!(e, IrcCommandEffect::SetNick(_)))
         );
         assert_eq!(count_replies(&effects), 1);
         snapshot(
@@ -1660,5 +1745,126 @@ mod tests {
         let result = rvs_build_info_reply("nick");
         assert_eq!(result.len(), 1);
         snapshot("20260528_build_info_reply", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260604_plan_part_private_extracts_peers() {
+        let result = rvs_plan_part_private("##111,##222");
+        assert_eq!(result, vec![111, 222]);
+        snapshot(
+            "20260604_plan_part_private_extracts_peers",
+            &format!("{result:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260604_plan_part_private_mixed() {
+        let result = rvs_plan_part_private("#111,##333");
+        assert_eq!(result, vec![333]);
+        snapshot("20260604_plan_part_private_mixed", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260604_plan_part_private_no_private() {
+        let result = rvs_plan_part_private("#111,#222");
+        assert!(result.is_empty());
+        snapshot(
+            "20260604_plan_part_private_no_private",
+            &format!("{result:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260604_plan_part_private_empty() {
+        let result = rvs_plan_part_private("");
+        assert!(result.is_empty());
+        snapshot("20260604_plan_part_private_empty", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260604_plan_part_private_invalid_double_hash() {
+        let result = rvs_plan_part_private("##abc");
+        assert!(result.is_empty());
+        snapshot(
+            "20260604_plan_part_private_invalid_double_hash",
+            &format!("{result:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260604_plan_part_generates_effect() {
+        let effects = rvs_plan_irc_command(
+            &Command::PART("##123,#456".to_owned(), None),
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
+        );
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::PartPrivate(ids) if *ids == vec![123]))
+        );
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::Reply(_)))
+        );
+        snapshot(
+            "20260604_plan_part_generates_effect",
+            &format!("{effects:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260604_plan_part_no_effect_for_group_only() {
+        let effects = rvs_plan_irc_command(
+            &Command::PART("#123,#456".to_owned(), None),
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "",
+        );
+        assert!(
+            !effects
+                .iter()
+                .any(|e| matches!(e, IrcCommandEffect::PartPrivate(_)))
+        );
+        snapshot(
+            "20260604_plan_part_no_effect_for_group_only",
+            &format!("{effects:?}"),
+        );
+    }
+
+    #[test]
+    fn test_20260604_build_no_such_nick() {
+        let result = rvs_build_no_such_nick("nick", "target");
+        let msg_str = result.to_string();
+        assert!(msg_str.contains("401"));
+        snapshot("20260604_build_no_such_nick", &format!("{result:?}"));
+    }
+
+    #[test]
+    fn test_20260604_plan_quit() {
+        let effects = rvs_plan_irc_command(
+            &Command::QUIT(None),
+            "nick",
+            "user",
+            &RegistrationState::Registered,
+            false,
+            "2024-01-01T00:00:00Z",
+        );
+        assert!(effects.iter().any(|e| matches!(e, IrcCommandEffect::Quit)));
+        let reply_count: usize = effects
+            .iter()
+            .filter_map(|e| match e {
+                IrcCommandEffect::Reply(msgs) => Some(msgs.len()),
+                _ => None,
+            })
+            .sum();
+        assert_eq!(reply_count, 1);
+        snapshot("20260604_plan_quit", &format!("{effects:?}"));
     }
 }
