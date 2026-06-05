@@ -16,6 +16,7 @@ use crate::irc_proto::{
     rvs_resolve_privmsg_target, rvs_server_name,
 };
 use crate::onebot::RenderedOnebotMessage;
+use crate::onebot_types::{rvs_parse_group_info, rvs_parse_stranger_info};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParsedChannel {
@@ -306,12 +307,10 @@ async fn rvs_handle_join_AIP(
         let (channel, topic) = match &lookup {
             JoinLookup::Group { channel, group_id } => {
                 let name = match bot.get_group_info(*group_id, false).await {
-                    Ok(resp) => resp
-                        .data
-                        .get("group_name")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("未知群聊")
-                        .to_owned(),
+                    Ok(resp) => rvs_parse_group_info(&resp.data)
+                        .map(|g| g.group_name.clone())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or("未知群聊".to_owned()),
                     Err(_) => "无法获取群名".to_owned(),
                 };
                 (channel.clone(), name)
@@ -319,13 +318,11 @@ async fn rvs_handle_join_AIP(
             JoinLookup::Private { channel, peer_id } => {
                 private_ids.push(*peer_id);
                 let name = match bot.get_stranger_info(*peer_id, false).await {
-                    Ok(resp) => resp
-                        .data
-                        .get("nickname")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("未知用户")
-                        .to_owned(),
-                    Err(_) => "无法获取用户信息".to_owned(),
+                    Ok(resp) => rvs_parse_stranger_info(&resp.data)
+                        .map(|s| s.nickname.clone())
+                        .filter(|s| !s.is_empty())
+                        .unwrap_or_else(|| peer_id.to_string()),
+                    Err(_) => peer_id.to_string(),
                 };
                 (channel.clone(), name)
             }
@@ -434,12 +431,10 @@ async fn rvs_build_private_join_burst_AIP(
     debug_assert!(peer_id > 0, "peer_id must be positive");
     let channel = format!("##{peer_id}");
     let nickname = match bot.get_stranger_info(peer_id, false).await {
-        Ok(resp) => resp
-            .data
-            .get("nickname")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&peer_id.to_string())
-            .to_owned(),
+        Ok(resp) => rvs_parse_stranger_info(&resp.data)
+            .map(|s| s.nickname.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| peer_id.to_string()),
         Err(_) => peer_id.to_string(),
     };
     let topic = format!("与 {nickname} 的私聊");

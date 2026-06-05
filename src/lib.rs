@@ -8,6 +8,7 @@ mod error;
 mod irc_handler;
 mod irc_proto;
 mod onebot;
+mod onebot_types;
 mod server;
 
 use std::sync::Arc;

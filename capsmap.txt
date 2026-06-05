@@ -115,6 +115,9 @@ image::reader::Reader::with_guessed_format=IP
 image::reader::Reader::decode=IP
 stream::iter=
 
+# serde - pure, may fail
+serde_json::from_value=
+
 # kovi API - async, blocking, fallible, IO, impure
 kovi::PluginBuilder::get_runtime_bot=ABIP
 kovi::PluginBuilder::on_msg=ABIP
