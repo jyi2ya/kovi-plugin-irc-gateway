@@ -114,6 +114,7 @@ impl<'de> serde::Deserialize<'de> for FaceId {
         D: serde::Deserializer<'de>,
     {
         use serde::de;
+        #[derive(Debug)]
         struct FaceIdVisitor;
 
         impl de::Visitor<'_> for FaceIdVisitor {
@@ -168,6 +169,7 @@ impl<'de> serde::Deserialize<'de> for ReplyId {
         D: serde::Deserializer<'de>,
     {
         use serde::de;
+        #[derive(Debug)]
         struct ReplyIdVisitor;
 
         impl de::Visitor<'_> for ReplyIdVisitor {
@@ -206,7 +208,10 @@ impl ReplyId {
 
 /// Deserializes a `serde_json::Value` into a typed struct, returning `None` on failure.
 fn rvs_from_value<T: serde::de::DeserializeOwned>(value: &serde_json::Value) -> Option<T> {
-    serde_json::from_value(value.clone()).ok()
+    match serde_json::from_value(value.clone()) {
+        Ok(v) => Some(v),
+        Err(_) => None,
+    }
 }
 
 /// Parses a `get_group_info` API response data into a typed struct.
@@ -235,28 +240,63 @@ pub fn rvs_parse_get_msg(value: &serde_json::Value) -> Option<GetMsgData> {
 }
 
 /// Parses a text segment's data into a typed struct.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "rivus forbids .unwrap_or_default() error swallowing"
+)]
 pub fn rvs_parse_text_data(value: &serde_json::Value) -> TextSegmentData {
-    rvs_from_value(value).unwrap_or_default()
+    match rvs_from_value(value) {
+        Some(v) => v,
+        None => TextSegmentData::default(),
+    }
 }
 
 /// Parses a face segment's data into a typed struct.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "rivus forbids .unwrap_or_default() error swallowing"
+)]
 pub fn rvs_parse_face_data(value: &serde_json::Value) -> FaceSegmentData {
-    rvs_from_value(value).unwrap_or_default()
+    match rvs_from_value(value) {
+        Some(v) => v,
+        None => FaceSegmentData::default(),
+    }
 }
 
 /// Parses an image segment's data into a typed struct.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "rivus forbids .unwrap_or_default() error swallowing"
+)]
 pub fn rvs_parse_image_data(value: &serde_json::Value) -> ImageSegmentData {
-    rvs_from_value(value).unwrap_or_default()
+    match rvs_from_value(value) {
+        Some(v) => v,
+        None => ImageSegmentData::default(),
+    }
 }
 
 /// Parses an at-mention segment's data into a typed struct.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "rivus forbids .unwrap_or_default() error swallowing"
+)]
 pub fn rvs_parse_at_data(value: &serde_json::Value) -> AtSegmentData {
-    rvs_from_value(value).unwrap_or_default()
+    match rvs_from_value(value) {
+        Some(v) => v,
+        None => AtSegmentData::default(),
+    }
 }
 
 /// Parses a reply segment's data into a typed struct.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "rivus forbids .unwrap_or_default() error swallowing"
+)]
 pub fn rvs_parse_reply_data(value: &serde_json::Value) -> ReplySegmentData {
-    rvs_from_value(value).unwrap_or_default()
+    match rvs_from_value(value) {
+        Some(v) => v,
+        None => ReplySegmentData::default(),
+    }
 }
 
 #[cfg(test)]
@@ -264,7 +304,7 @@ pub fn rvs_parse_reply_data(value: &serde_json::Value) -> ReplySegmentData {
 mod tests {
     use super::*;
 
-    fn snapshot(name: &str, content: &str) {
+    fn rvs_snapshot_BIS(name: &str, content: &str) {
         let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
@@ -274,7 +314,7 @@ mod tests {
         let v = serde_json::json!({"group_id": 123, "group_name": "test群", "member_count": 10});
         let info = rvs_parse_group_info(&v).unwrap();
         assert_eq!(info.group_name, "test群");
-        snapshot("20260605_parse_group_info", &format!("{info:?}"));
+        rvs_snapshot_BIS("20260605_parse_group_info", &format!("{info:?}"));
     }
 
     #[test]
@@ -284,7 +324,7 @@ mod tests {
         assert_eq!(info.nickname, "alice");
         assert_eq!(info.card, "Alice");
         assert_eq!(info.title, "管理员");
-        snapshot("20260605_parse_group_member_info", &format!("{info:?}"));
+        rvs_snapshot_BIS("20260605_parse_group_member_info", &format!("{info:?}"));
     }
 
     #[test]
@@ -292,7 +332,7 @@ mod tests {
         let v = serde_json::json!({"user_id": 100, "nickname": "bob"});
         let info = rvs_parse_stranger_info(&v).unwrap();
         assert_eq!(info.nickname, "bob");
-        snapshot("20260605_parse_stranger_info", &format!("{info:?}"));
+        rvs_snapshot_BIS("20260605_parse_stranger_info", &format!("{info:?}"));
     }
 
     #[test]
@@ -300,7 +340,7 @@ mod tests {
         let v = serde_json::json!({"file": "/tmp/img.jpg"});
         let info = rvs_parse_get_image(&v).unwrap();
         assert_eq!(info.file, "/tmp/img.jpg");
-        snapshot("20260605_parse_get_image", &format!("{info:?}"));
+        rvs_snapshot_BIS("20260605_parse_get_image", &format!("{info:?}"));
     }
 
     #[test]
@@ -309,7 +349,7 @@ mod tests {
         let info = rvs_parse_get_msg(&v).unwrap();
         assert_eq!(info.sender.user_id, 42);
         assert_eq!(info.raw_message, "hello");
-        snapshot("20260605_parse_get_msg", &format!("{info:?}"));
+        rvs_snapshot_BIS("20260605_parse_get_msg", &format!("{info:?}"));
     }
 
     #[test]
@@ -317,7 +357,7 @@ mod tests {
         let v = serde_json::json!({"text": "hello world"});
         let data = rvs_parse_text_data(&v);
         assert_eq!(data.text, "hello world");
-        snapshot("20260605_parse_text_data", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_text_data", &format!("{data:?}"));
     }
 
     #[test]
@@ -325,7 +365,7 @@ mod tests {
         let v = serde_json::json!({});
         let data = rvs_parse_text_data(&v);
         assert_eq!(data.text, "");
-        snapshot("20260605_parse_text_data_empty", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_text_data_empty", &format!("{data:?}"));
     }
 
     #[test]
@@ -333,7 +373,7 @@ mod tests {
         let v = serde_json::json!({"id": "178"});
         let data = rvs_parse_face_data(&v);
         assert_eq!(data.id.rvs_to_string(), "178");
-        snapshot("20260605_parse_face_data_string_id", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_face_data_string_id", &format!("{data:?}"));
     }
 
     #[test]
@@ -341,7 +381,7 @@ mod tests {
         let v = serde_json::json!({"id": 178});
         let data = rvs_parse_face_data(&v);
         assert_eq!(data.id.rvs_to_string(), "178");
-        snapshot("20260605_parse_face_data_integer_id", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_face_data_integer_id", &format!("{data:?}"));
     }
 
     #[test]
@@ -349,7 +389,7 @@ mod tests {
         let v = serde_json::json!({"qq": "12345"});
         let data = rvs_parse_at_data(&v);
         assert_eq!(data.qq, "12345");
-        snapshot("20260605_parse_at_data", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_at_data", &format!("{data:?}"));
     }
 
     #[test]
@@ -357,7 +397,7 @@ mod tests {
         let v = serde_json::json!({"id": "12345"});
         let data = rvs_parse_reply_data(&v);
         assert_eq!(data.id.rvs_to_i32(), 12345);
-        snapshot("20260605_parse_reply_data", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_reply_data", &format!("{data:?}"));
     }
 
     #[test]
@@ -365,7 +405,25 @@ mod tests {
         let v = serde_json::json!({"id": 67890});
         let data = rvs_parse_reply_data(&v);
         assert_eq!(data.id.rvs_to_i32(), 67890);
-        snapshot("20260605_parse_reply_data_integer", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_reply_data_integer", &format!("{data:?}"));
+    }
+
+    #[test]
+    fn test_20260617_from_value_ok() {
+        let v = serde_json::json!({"group_name": "test群"});
+        let info: Option<GroupInfoData> = rvs_from_value(&v);
+        assert!(info.is_some());
+        let info = info.unwrap();
+        assert_eq!(info.group_name, "test群");
+        rvs_snapshot_BIS("20260617_from_value_ok", &format!("{info:?}"));
+    }
+
+    #[test]
+    fn test_20260617_from_value_malformed() {
+        let v = serde_json::json!(42);
+        let info: Option<GroupInfoData> = rvs_from_value(&v);
+        assert!(info.is_none());
+        rvs_snapshot_BIS("20260617_from_value_malformed", &format!("{info:?}"));
     }
 
     #[test]
@@ -375,6 +433,6 @@ mod tests {
         assert_eq!(data.file, "test.jpg");
         assert_eq!(data.url, "http://example.com/test.jpg");
         assert_eq!(data.summary, "表情包");
-        snapshot("20260605_parse_image_data", &format!("{data:?}"));
+        rvs_snapshot_BIS("20260605_parse_image_data", &format!("{data:?}"));
     }
 }

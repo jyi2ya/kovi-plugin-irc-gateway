@@ -1,6 +1,8 @@
 # Rivus 编程规范
 
-正确性优先，不怕代码膨胀。以下规范由 rivus-linter 自动检查，帮助你遵守。
+正确性优先，不怕代码膨胀。以下规范由 `cargo rivus` 自动检查，帮助你遵守。
+
+> **工具手册**：如果你需要了解 `cargo rivus` 的详细用法（命令、选项、输出格式等），运行 `cargo rivus usage` 获取完整手册。
 
 ---
 
@@ -68,7 +70,6 @@ fn rvs_transfer_M(
 |---------|---------|------|
 | 纯函数（无标记） | **必须测试**，穷举边界条件 | 确定性，测试成本低 |
 | 副作用函数（标记 `S`） | 须考虑依赖注入，通过 mock/stub 隔离外部依赖 | 需要控制外部状态 |
-| 可能 panic 的函数（标记 `P`） | 须覆盖触发 panic 的边界条件 | panic 路径难以静态保证安全 |
 
 ### 测试命名示例
 
@@ -88,7 +89,7 @@ test_out/
 
 每个可能失败的函数定义完整的错误类型枚举，调用者必须处理每种错误。采用 Rust 的 `Result<T, E>` 模式。用 thiserror，禁止使用 `anyhow`、`eyre`、`color_eyre`。
 
-**Result/Option 由类型系统强制处理**——编译器保证调用方必须 `match` 或 `?`，因此不需要额外的能力标记。真正需要标记的是 `panic`——它绕过类型系统，调用方无法静态知道函数可能崩溃。参见第五节能力标记中的 `P`。
+**Result/Option 由类型系统强制处理**——编译器保证调用方必须 `match` 或 `?`，因此不需要额外的能力标记。
 
 ### 错误类型设计原则
 
@@ -141,10 +142,10 @@ struct Raw<T>(T);
 struct Validated<T>(T);
 
 fn rvs_parse_email(raw: Raw<String>) -> Result<Validated<Email>, ParseError>
-async fn rvs_send_email_AIS(email: &Validated<Email>, body: &str) -> Result<(), SendError>
+async fn rvs_send_email_ABIS(email: &Validated<Email>, body: &str) -> Result<(), SendError>
 ```
 
-`rvs_send_email_AIS` 只接受 `Validated<Email>`，从类型层面杜绝了未验证邮箱被发送的可能性。返回 `Result` 由类型系统强制处理，无需额外能力标记。
+`rvs_send_email_ABIS` 只接受 `Validated<Email>`，从类型层面杜绝了未验证邮箱被发送的可能性。返回 `Result` 由类型系统强制处理，无需额外能力标记。
 
 ---
 
@@ -156,10 +157,12 @@ async fn rvs_send_email_AIS(email: &Validated<Email>, body: &str) -> Result<(), 
 
 你的所有函数名必须以 `rvs_` 开头！实现外部 traits 除外。
 
+后缀提取规则：去除 `rvs_` 前缀后，取最后一个 `_` 之后的部分；仅当该部分全部为大写 ASCII 字母时才识别为能力后缀，否则视为无后缀的纯函数。已知字母（`ABIMSTU`）正常提取，未知字母触发 `UnknownSuffixLetter` 警告。
+
 推荐在 crate 根（`lib.rs` 或 `main.rs`）加一行全局标注即可：
 
 ```rust
-#![expect(non_snake_case, reason = "rvs_ functions use uppercase capability suffixes (A/B/I/M/P/S/T/U)")]
+#![expect(non_snake_case, reason = "rvs_ functions use uppercase capability suffixes")]
 ```
 
 此标注可从外层作用域继承——如果在 crate 级（`#![expect(non_snake_case)]`）、文件级、`mod` 级、`impl` 块或 `trait` 定义上标注了 `#[allow(non_snake_case)]` 或 `#[expect(non_snake_case)]`，则内部的所有 `rvs_` 函数均视为已覆盖，无需逐个重复标注。
@@ -172,12 +175,11 @@ async fn rvs_send_email_AIS(email: &Validated<Email>, body: &str) -> Result<(), 
 | `B` | **Blocking** | 可能阻塞当前线程（等待 I/O、锁、sleep、大量计算） | 非阻塞 |
 | `I` | **IO** | 执行 I/O 操作（网络、文件、数据库） | 纯计算 |
 | `M` | **Mutable** | 修改参数中的可变状态 | 只读 |
-| `P` | **Panic** | 可能 panic（`panic!`、`assert!`、`unwrap`、`expect` 等） | 不会 panic |
 | `S` | **Side effect** | 有副作用（修改/读取全局变量、环境变量、随机数等） | 纯函数 |
 | `T` | **ThreadLocal** | 依赖线程局部状态，不可跨线程共享 | 线程安全 / 无状态 |
 | `U` | **Unsafe** | 包含不安全操作（裸指针、FFI、transmute） | 安全代码 |
 
-其中，权限小于等于 ABM 的函数为好函数，因为它们方便单元测试。如果一个函数需要 ABM 以外的权限（P、I、S、T、U 中的任何一个），那么它不是好函数。
+其中，能力集合是 `{A,B,M}` 的子集的函数为好函数——这包括纯函数（空能力集）以及仅含 A/B/M 的函数，因为它们方便单元测试。如果一个函数需要 ABM 以外的权限（I、S、T、U 中的任何一个），那么它不是好函数。
 
 ### 常见行为模式示例
 
@@ -195,7 +197,6 @@ async fn rvs_send_email_AIS(email: &Validated<Email>, body: &str) -> Result<(), 
 | `rvs_hash_password` | （无标记） | 纯函数：确定性哈希计算 |
 | `rvs_send_email_ABIS` | A + B + I + S | 异步网络请求，阻塞 + I/O + 有副作用（发信不可撤回） |
 | `rvs_random_uuid_ST` | S + T | 副作用（非确定性）+ 线程局部：使用 thread-local RNG 生成 UUID |
-| `rvs_divide_P` | P | 可能 panic：除以零时 panic |
 | `rvs_get_env_S` | S | 读取环境变量，有副作用 |
 
 ### 调用规则
@@ -210,7 +211,6 @@ async fn rvs_send_email_AIS(email: &Validated<Email>, body: &str) -> Result<(), 
 | `B` | 可阻塞可调用非阻塞 | 非阻塞不可调用阻塞 | 非阻塞函数（如异步）中阻塞会卡死事件循环 |
 | `I` | 有 I/O 可调用纯计算 | 无 I/O 不可调用有 I/O | 保持计算层的纯粹性 |
 | `M` | 可变可调用只读 | 只读不可调用可变 | 只读函数不应引入副作用 |
-| `P` | 可能 panic 可调用不 panic | 不 panic 不可调用可能 panic | panic 会沿调用栈传播，不 panic 的函数不应引入崩溃路径 |
 | `S` | 有副作用可调用纯函数 | 纯函数不可调用有副作用 | 纯函数的承诺不允许被打破 |
 | `T` | 线程局部可调用线程安全 | 线程安全不可调用线程局部 | 线程安全函数引入线程局部状态会破坏安全性 |
 | `U` | unsafe 可调用 safe | safe 不可调用 unsafe | 安全代码不应引入不安全操作 |
@@ -222,7 +222,6 @@ rvs_write_db_ABM   可调用  rvs_parse_int        ✅ (有 A/B/M 可调无, 无
 rvs_parse_int      不可调用 rvs_write_db_ABM     ❌ (无 A 不可调有 A)
 rvs_add            不可调用 rvs_sort_inplace_M    ❌ (无 M 不可调有 M)
 rvs_sort_inplace_M 可调用  rvs_add               ✅ (有 M 可调无 M)
-rvs_safe_div       不可调用 rvs_divide_P          ❌ (无 P 不可调有 P——panic 会传播)
 ```
 
 ### 修改函数时的能力合规流程
@@ -235,9 +234,25 @@ rvs_safe_div       不可调用 rvs_divide_P          ❌ (无 P 不可调有 P�
 3. trait 和接口的函数签名也须遵循能力标记
 4. 调用外部库函数时，外部函数名无须遵循标记规则，但须仔细审查其运行时行为是否满足调用方的约束
 
-### capsmap.txt
+### capsmap
 
-项目根目录下的 `capsmap.txt` 文件为非 `rvs_` 函数声明能力。每行一个条目，格式：
+为非 `rvs_` 函数声明能力。支持两种形式：
+
+**目录形式**（推荐）：项目根目录下的 `caps/` 目录，包含多个 caps 文件：
+
+```
+caps/
+├── seed      # 手动维护的底层基线（分配、I/O 内部、编译器内部、async 展开等）
+├── std       # std/core/alloc 的全量条目（可通过 infer-std 自动生成）
+├── deps      # 第三方依赖条目
+├── suppress  # 修正条目（覆盖 std/deps 中过宽的能力标记）
+└── ext       # 项目特定条目（最高优先级）
+```
+
+目录内的文件按固定层级顺序加载（后加载的覆盖先加载的）：
+`std` → `deps` → `seed` → `suppress` → `ext` → 其余文件按字母序。
+
+每行一个条目，格式：
 
 ```
 完整函数路径=能力字母 # 可选注释
@@ -249,158 +264,11 @@ rvs_safe_div       不可调用 rvs_divide_P          ❌ (无 P 不可调有 P�
 std::fs::read_to_string=BI     # 阻塞+I/O（失败由 Result 表达）
 std::collections::HashMap::new=  # 纯函数，无能力
 std::process::exit=S           # 副作用：终止进程
-core::panicking::panic=P       # 可能 panic
 ```
 
-- linter 对 capsmap 中的键做双向后缀匹配：`name.ends_with("::key")` 或 `key.ends_with("::name")` 均可命中。先查全名精确匹配，找不到再做双向后缀匹配。如果匹配到了错误的条目，在代码里把调用路径写长一点以消除歧义
+- linter 对 capsmap 中的键做精确匹配（全限定路径完全一致）。不支持后缀匹配——caps 文件中的键必须使用 rustc 给出的 def_path
 - 如果 linter 报告某函数"既非 rvs_-prefixed nor in capsmap"，你需要补全 capsmap。方法优先级：检查源码 > 编写测试验证行为 > 合理猜测
-
-### rivus-linter 工具手册
-
-#### `rivus-linter check <path> [-m <capsmap>]`
-
-基于 syn 的源码分析。递归扫描 `path` 下所有 `.rs` 文件，提取 `rvs_` 函数的定义与调用关系，检查调用链的能力合规性。
-
-```bash
-rivus-linter check src/ -m capsmap.txt
-```
-
-退出码：`0` = 无违规，`1` = 有违规，`2` = 运行错误。hint 和 warning 不影响退出码。
-
-#### `rivus-linter mir-check <path> [-m <capsmap>] [--mir-dir <dir>]`
-
-基于 MIR 的分析。编译项目到 MIR 中间表示，从编译器的视角提取函数调用。比 syn 更精确——能看到编译器展开的 trait 方法调用、闭包、运算符重载等 syn 看不到的东西。
-
-```bash
-# 完整流程：自动编译到 MIR 再检查
-rivus-linter mir-check . -m capsmap.txt
-
-# 跳过编译：直接检查已有的 .mir 文件（用于 CI 或调试）
-rivus-linter mir-check . -m capsmap.txt --mir-dir target/debug/deps
-```
-
-`path` 必须是包含 `Cargo.toml` 的项目根目录（完整流程），或任意目录（`--mir-dir` 模式）。
-
-**MIR 检查的局限**：
-1. 不执行 lint 检查（25 种警告检查），仅做能力合规性检查（违规 + 推断提示 + SpawnWarning）
-2. 推断提示不完整：能产生 `MissingPanic` 和 `MissingMutable`，但不能检测静态变量引用、`MissingAsync`、`MissingUnsafe`、缺断言警告等
-3. 不报告未知非 `rvs_` 函数调用警告（MIR 展开大量编译器内部调用，误报率太高）
-4. SpawnWarning 在 MIR 路径中有效，且因 MIR 使用全限定路径（如 `tokio::spawn` 而非 `use` 后的短名 `spawn`），能捕获 syn 路径因名字解析局限而漏检的 spawn 调用
-
-#### `rivus-linter report <path>`
-
-统计 `path` 下所有 `.rs` 文件中 `rvs_` 函数的能力分布，输出各能力标记的函数数量和行数占比。好函数（能力 ≤ ABM）应该越多越好。
-
-**报告中的百分比和柱状图均基于行数占比，而非函数数量占比。** 行数统计只计入函数体内部的有效代码行（去除函数签名、大括号、空行和注释），因此更能反映真实的代码逻辑量。优化方向是减少非好函数的代码行数——将逻辑从高能力函数抽出到低能力/纯函数中。
-
-**严禁注水**：为了提高好函数率而注入无实际业务价值的纯函数是被禁止的。好函数率的提升必须来自有意义的重构。
-
-**以下函数被排除在统计之外**：`#[test]` 函数、`#[cfg(test)]` 模块内的函数、`#[allow(dead_code)]` 或 `#[allow(unused)]` 标记的函数。
-
-```bash
-rivus-linter report src/
-```
-
-示例输出：
-
-```
-Capability Report
-------------------------------------------------------------
-Total: 42 functions, 890 lines
-------------------------------------------------------------
-  (good)          30 fns    650 lines  73.0% |██████████████████████░░░░░░░░|
-  (pure)          12 fns    200 lines  22.5% |██████████░░░░░░░░░░░░░░░░░░░░|
-  M(Mutable)      10 fns    300 lines  33.7% |█████████████░░░░░░░░░░░░░░░░░|
-  P(Panic)         5 fns    100 lines  11.2% |████░░░░░░░░░░░░░░░░░░░░░░░░░░|
-```
-
-#### `rivus-linter setup <path>`
-
-将 `rivus.md` 复制为目标项目的 `AGENTS.md`，并在 `Cargo.toml` 中注入 clippy lint 规则。
-
-- 如果目标项目已有部分 clippy lint，只注入不存在的条目
-- 已存在的 lint 值不会被覆盖
-- `AGENTS.md` 每次覆盖写入（确保与最新 `rivus.md` 同步）
-
-注入的 clippy lint 分为以下几类：
-- **防 panic**：`string_slice`、`indexing_slicing`、`unwrap_used`、`panic`、`todo` 等
-- **防静默故障**：`let_underscore_future`、`let_underscore_must_use`、`unused_result_ok`、`map_err_ignore` 等
-- **async 安全**：`await_holding_lock`、`await_holding_refcell_ref`、`large_futures`
-- **内存安全**：`mem_forget`、`undocumented_unsafe_blocks`、`multiple_unsafe_ops_per_block` 等
-- **数值正确性**：`float_cmp`、`float_cmp_const`、`cast_sign_loss`、`invalid_upcast_comparisons` 等
-- **杂项**：`rc_mutex`、`debug_assert_with_mut_call`、`dbg_macro`、`allow_attributes` 等
-
-```bash
-rivus-linter setup .           # 当前目录
-rivus-linter setup /path/to/project  # 指定目录
-```
-
-#### 输出分类
-
-`check` 和 `mir-check` 输出三类结果：
-
-| 类别 | 关键字 | 含义 | 影响退出码 |
-|------|--------|------|-----------|
-| 违规 | `error` | 调用链能力冲突、stub 宏、空函数体 | 是 |
-| 警告 | `warning` | 各种代码质量问题 | 否 |
-| 推断提示 | `hint` | 函数的实际行为暗示应有某能力但名字里没写 | 否 |
-
-#### 违规类型
-
-| 类型 | 含义 |
-|------|------|
-| `Call` | 函数调用了自身能力不允许的函数 |
-| `StaticRef` | 函数引用了 `static` 或 `thread_local!` 变量但缺少相应能力（`static` 不可变引用需要 `S`，`static mut` 引用需要 `S` + `U`，`thread_local!` 引用需要 `S` + `T`） |
-| `StubMacro` | 函数体包含 `todo!()` 或 `unimplemented!()`——未实现的存根 |
-| `EmptyFn` | 函数体无任何逻辑（仅含 `debug_assert!`） |
-
-#### 警告类型
-
-| 警告 | 含义 |
-|------|------|
-| `Warning` | 调用了既非 `rvs_` 前缀也不在 capsmap 中的函数 |
-| `MissingAssertWarning` | `rvs_` 函数有原始数值类型参数却未写 `debug_assert!` |
-| `DeadCodeWarning` | `rvs_` 函数被 `#[allow(dead_code)]` 或 `#[allow(unused)]` 标记 |
-| `MissingAllowWarning` | `rvs_` 函数有大写后缀但未被 `#[allow(non_snake_case)]` 或 `#[expect(non_snake_case)]` 覆盖 |
-| `TestNameFormatWarning` | `#[test]` 函数名不匹配 `^test_\d{8}_\w+$` 格式 |
-| `DuplicateTestWarning` | 同名测试函数出现多次（跨文件检测） |
-| `BannedImportWarning` | 导入了被禁 crate（`anyhow`、`eyre`、`color_eyre`） |
-| `NonRvsFnWarning` | 函数缺少 `rvs_` 前缀（`#[test]` 函数、`main`、trait impl 方法除外） |
-| `MissingDocWarning` | pub 函数/方法缺少 `///` 文档注释 |
-| `DenyWarningsWarning` | 文件级 `#![deny(warnings)]` 反模式——应改用具名 lint |
-| `WildcardImportWarning` | `use xxx::*;` 通配导入（`super::*` 和 `*::prelude::*` 除外） |
-| `MissingSafetyDocWarning` | unsafe 函数缺少 `/// # Safety` 文档段 |
-| `BorrowedParamWarning` | 参数使用 `&String`/`&Vec<T>`/`&Box<T>`——应改用 `&str`/`&[T]`/`&T` |
-| `MissingDebugWarning` | pub struct/enum 缺少 `#[derive(Debug)]` |
-| `MissingPanicsDocWarning` | 带 `P` 标记的函数缺少 `/// # Panics` 文档段 |
-| `IntoImplWarning` | 直接实现 `Into`——应实现 `From`，`Into` 会自动提供 |
-| `ConsumedArgOnErrorWarning` | 函数消费了 owned 参数但错误类型中未保留该参数。注意：仅检查错误类型名称中是否包含参数类型标识符（如 `RunError<Cli>` 包含 `Cli`），无法深入检查错误枚举的变体字段——如果参数确实被保留在变体中（如 `AppError::Failed { cli: Box<Cli> }`），属于误报 |
-| `DerefPolymorphismWarning` | 实现了 `Deref`——可能用 Deref 模拟继承，应改用组合 |
-| `ReflectionUsageWarning` | 使用了 `std::any::Any`/`type_name`/`type_id`——应改用 trait 分发 |
-| `TodoCommentWarning` | 代码中包含 `// TODO` 或 `// FIXME` 注释 |
-| `UntestedGoodFnWarning` | 好函数（能力 ≤ ABM）未被任何测试调用 |
-| `ErrorSwallowWarning` | 调用 `.ok()` 或 `.unwrap_or_default()` 静默吞掉错误 |
-| `CatchUnwindWarning` | 使用 `catch_unwind`——应修 panic 源头而非捕获 |
-| `CatchAllErrorVariantWarning` | 错误枚举含 `Unknown`/`Other` 兜底变体 |
-| `MissingTestOutputWarning` | `#[test]` 函数缺少对应的 `test_out/{name}.out` 快照文件 |
-| `ValidateReturnsUnitWarning` | 名为 `validate`/`check`/`verify` 的函数返回 `Result<(), E>`——应改用 `TryFrom` 返回 `Result<Target, Error>`（parse instead of validate） |
-| `SpawnWarning` | 函数调用了非结构化 spawn（`tokio::spawn`、`std::thread::spawn` 等）——应改用结构化并发原语 |
-
-#### 推断提示
-
-> **严重级别**：`MissingPanic` 输出为 `warning`（更值得关注），其余推断提示输出为 `hint`。两者均不影响退出码。
-
-| InferenceKind | 含义 |
-|---------------|------|
-| `MissingAsync` | 函数声明为 `async fn` 但后缀缺少 `A` |
-| `MissingUnsafe` | 函数含 `unsafe` 块或声明为 `unsafe fn` 但后缀缺少 `U` |
-| `MissingMutable` | 函数有 `&mut` 参数（含 `&mut self`）但后缀缺少 `M` |
-| `MissingPanic` | 函数调用了 `panic!`/`assert!`/`assert_eq!`/`assert_ne!`/`unreachable!`/`todo!`/`unimplemented!`/`.unwrap()`/`.expect()`（不含 `debug_assert!`）但后缀缺少 `P`。**例外**：`.expect("never: ...")` 不视为 panic |
-| `MissingSideEffect` | 函数读取了 `static` 变量但后缀缺少 `S` |
-| `MissingThreadLocal` | 函数读取了 `thread_local!` 变量但后缀缺少 `T` |
-| `NonAlphabeticalSuffix` | 能力后缀字母未按字母序排列 |
-| `DuplicateSuffixLetter` | 能力后缀中有重复字母 |
-| `UnknownSuffixLetter` | 能力后缀包含不在 `ABIMPSTU` 中的字母——已知字母仍正常提取，未知字母仅报告提示 |
+- caps 文件中的条目使用 rustc-driver 解析出的全限定路径（如 `core::result::impl::expect=`），而非源码中的短名
 
 ### 日常开发流程
 
@@ -411,12 +279,12 @@ rivus-linter setup /path/to/project  # 指定目录
    cargo build          # 编译通过
    cargo clippy         # 无警告
    cargo test           # 测试通过
-   rivus-linter check src/ -m capsmap.txt   # syn 检查无违规
-   rivus-linter mir-check . -m capsmap.txt  # MIR 检查无违规（可选，更严格）
+   cargo rivus check    # 能力合规检查无违规
    ```
-3. **遇到 warning 时**：linter 输出的 warning 表示某个函数调用既非 `rvs_` 前缀也不在 capsmap 中。补全 capsmap 即可消除
-4. **遇到 violation 时**：调用链能力冲突。要么修改调用方的标记（可能级联影响），要么重构代码避免不合规的调用
-5. **遇到 hint 时**：推断性提示——函数的实际行为暗示应有某能力但名字里没写。审查后决定：补上能力标记（注意级联影响），或确认是误判则忽略
+3. **遇到 unknown callee warning 时**：linter 输出的 `Warning` 表示某个函数调用既非 `rvs_` 前缀也不在 capsmap 中。补全 capsmap 即可消除
+4. **遇到其他 warning 时**：根据警告类型分别处理——缺少断言就加 `debug_assert!`，缺少文档就补 `///`，等等
+5. **遇到 violation 时**：调用链能力冲突。要么修改调用方的标记（可能级联影响），要么重构代码避免不合规的调用
+6. **遇到推断提示时**：推断性提示——函数的实际行为暗示应有某能力但名字里没写。审查后决定：补上能力标记（注意级联影响），或确认是误判则忽略
 
 ### 结构化并发
 
@@ -431,19 +299,15 @@ Spawn 是**并发的 goto**——它创建的后台任务生命周期不受调�
 | `tokio::spawn(fut)` | `tokio::join!(fut1, fut2)` | 并发执行少量已知任务 |
 | `tokio::spawn(fut)` | `tokio::task::JoinSet` | 并发执行动态数量任务，需收集结果 |
 | `tokio::spawn(fut)` | `futures::stream::FuturesUnordered` | 流式处理并发任务 |
-| `std::thread::spawn(closure)` | `std::thread::scope(|s| { s.spawn(|| ...); })` | 作用域线程，无需 `'static` |
+| `std::thread::spawn(closure)` | `std::thread::scope(\|s\| { s.spawn(\|\| ...); })` | 作用域线程，无需 `'static` |
 | `std::thread::spawn(closure)` | `rayon::spawn` / `rayon::join` | 数据并行 |
 
 #### 原则
 
 1. **优先 `join!` / `JoinSet` / `thread::scope`**：任务的生命周期与词法作用域绑定，父任务自动等待子任务完成
 2. **spawn 是最后的手段**：只在确实需要"fire-and-forget"时使用，并确保有独立的超时和错误处理机制
-3. **每个 spawn 必须有对应的 JoinHandle 或超时**：确保后台任务不会无声消失
+3. **每个 spawn 最好都有对应的 JoinHandle 或超时**：确保后台任务不会无声消失。当前 lint 只会对 spawn 调用本身发出警告，不会验证你是否正确处理了 JoinHandle 或超时
 4. **测试中可使用 spawn**：linter 对 `#[test]` 函数中的 spawn 调用不产生警告
-
-#### setup 命令的 spawn 处理
-
-`rivus-linter setup` 会自动在目标项目的 `capsmap.txt` 中注入 spawn 函数条目，确保 linter 能识别这些调用。已在 capsmap 中的条目不会被重复添加。
 
 ---
 
@@ -468,7 +332,7 @@ docs/theory/
 
 ### 增加好函数率的架构手法
 
-以下手法通过分离关注点，将高能力（I/S/P/U）代码限制在薄薄一层适配器中，把大量业务逻辑拉入纯函数。
+以下手法通过分离关注点，将高能力（I/S/T/U）代码限制在薄薄一层适配器中，把大量业务逻辑拉入纯函数。
 
 #### 六边形架构（Ports & Adapters）
 
@@ -681,7 +545,7 @@ fn test_20260422_create_order_ok() {
 * 提交前必须运行日常开发流程中的全部检查命令，汇总检查结果和变更内容生成一份汇报，询问用户是否确认提交，收到确认后才执行 `git commit` 和 `git push`
 * 函数能力最好按照字母顺序排列
 * 多用泛型少用 dyn
-* 用 `.expect("never: 补充说明")` 标注不会 panic 的 `.expect()` 调用——linter 不会将此类调用视为 panic
+* 用 `.expect("never: 补充说明")` 标注不会 panic 的 `.expect()` 调用——这只是一种编码惯例，linter 不再检测 P 能力
 * 用结构体显式定义数据类型，不要直接使用 `serde_json::Value` 和 `serde_json::json!`
 * 编程过程中需要创建临时目录时，优先使用 `$TMPDIR`（如果已设置）或 `~/tmp`，而不是 `/tmp`
 * 禁止使用 `#![deny(warnings)]`——应改用具名 lint（如 `#![deny(unused_imports)]`）

@@ -43,7 +43,7 @@ impl Default for Config {
 mod tests {
     use super::*;
 
-    fn snapshot(name: &str, content: &str) {
+    fn rvs_snapshot_BIS(name: &str, content: &str) {
         let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
@@ -51,6 +51,6 @@ mod tests {
     #[test]
     fn test_20260528_default_bind_addr() {
         let result = rvs_default_bind_addr();
-        snapshot("20260528_default_bind_addr", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_default_bind_addr", &format!("{result:?}"));
     }
 }

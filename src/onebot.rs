@@ -79,7 +79,7 @@ fn rvs_render_pure_segment(
 /// # Panics
 ///
 /// Never panics in practice; the `P` suffix is inherited from downstream renderers.
-pub async fn rvs_render_qq_array_message_ABIPS(
+pub async fn rvs_render_qq_array_message_ABIS(
     messages: &kovi::Message,
     bot: Arc<kovi::RuntimeBot>,
     group_id: Option<i64>,
@@ -95,11 +95,11 @@ pub async fn rvs_render_qq_array_message_ABIPS(
                 return rendered;
             }
             match segment.type_.as_str() {
-                "image" => rvs_render_image_segment_ABIP(&segment, &bot, image_mode).await,
-                "reply" => rvs_render_reply_segment_AIP(&segment, group_id, &bot).await,
+                "image" => rvs_render_image_segment_ABIS(&segment, &bot, image_mode).await,
+                "reply" => rvs_render_reply_segment_ABIS(&segment, group_id, &bot).await,
                 "at" => {
                     let at_data = rvs_parse_at_data(&segment.data);
-                    rvs_render_at_mention_AIP(&at_data.qq, group_id, &bot).await
+                    rvs_render_at_mention_ABIS(&at_data.qq, group_id, &bot).await
                 }
                 _ => format!("[{}]", rvs_segment_display_name(&segment.type_)),
             }
@@ -115,7 +115,7 @@ pub async fn rvs_render_qq_array_message_ABIPS(
 /// # Panics
 ///
 /// Never panics in practice; the `P` suffix is inherited from downstream helpers.
-async fn rvs_render_reply_segment_AIP(
+async fn rvs_render_reply_segment_ABIS(
     segment: &kovi::bot::message::Segment,
     group_id: Option<i64>,
     bot: &kovi::RuntimeBot,
@@ -142,7 +142,7 @@ async fn rvs_render_reply_segment_AIP(
             Ok(m) => rvs_extract_group_sender_name(&m).unwrap_or_else(|| sender_id.to_string()),
             Err(_) => sender_id.to_string(),
         },
-        None => rvs_parse_stranger_info_from_api_AIP(bot, sender_id).await,
+        None => rvs_parse_stranger_info_from_api_ABIS(bot, sender_id).await,
     };
     let sanitized = rvs_sanitize_nick(&sender_nick);
     let sender_name = rvs_pick_sender_name(&sanitized, sender_id);
@@ -155,7 +155,7 @@ async fn rvs_render_reply_segment_AIP(
 /// # Panics
 ///
 /// Never panics in practice; P marker inherited from kovi API calls.
-async fn rvs_parse_stranger_info_from_api_AIP(bot: &kovi::RuntimeBot, user_id: i64) -> String {
+async fn rvs_parse_stranger_info_from_api_ABIS(bot: &kovi::RuntimeBot, user_id: i64) -> String {
     debug_assert!(user_id > 0, "user_id must be positive");
     match bot.get_stranger_info(user_id, false).await {
         Ok(m) => {
@@ -182,7 +182,7 @@ fn rvs_reply_content_hint(raw_message: &str) -> String {
 /// # Panics
 ///
 /// Never panics in practice; the `P` suffix is inherited from the ASCII-art renderer.
-async fn rvs_render_image_segment_ABIP(
+async fn rvs_render_image_segment_ABIS(
     segment: &kovi::bot::message::Segment,
     bot: &kovi::RuntimeBot,
     image_mode: &ImageMode,
@@ -209,7 +209,10 @@ async fn rvs_render_image_segment_ABIP(
     let path = match bot.get_image(&img_data.file).await {
         Ok(info) => {
             let image_info = rvs_parse_get_image(&info.data);
-            let p = image_info.map(|i| i.file).unwrap_or_default();
+            let p = match image_info {
+                Some(i) => i.file,
+                None => String::new(),
+            };
             if p.is_empty() {
                 return "[图片：无路径]".to_owned();
             }
@@ -221,7 +224,7 @@ async fn rvs_render_image_segment_ABIP(
         }
     };
     log::info!("image path: {path}");
-    rvs_render_image_to_ascii_BIP(&path)
+    rvs_render_image_to_ascii_BIS(&path)
 }
 
 /// Renders an image to colored ASCII art.
@@ -229,7 +232,7 @@ async fn rvs_render_image_segment_ABIP(
 /// # Panics
 ///
 /// Never panics in practice; P marker inherited from callees.
-fn rvs_render_ascii_art_IP(image: &image::DynamicImage) -> String {
+fn rvs_render_ascii_art_BS(image: &image::DynamicImage) -> String {
     let mut buf = String::new();
     let render_options = rascii_art::RenderOptions::default()
         .height(15)
@@ -246,7 +249,7 @@ fn rvs_render_ascii_art_IP(image: &image::DynamicImage) -> String {
 /// # Panics
 ///
 /// Never panics in practice; errors are returned as placeholder strings.
-fn rvs_render_image_to_ascii_BIP(path: &str) -> String {
+fn rvs_render_image_to_ascii_BIS(path: &str) -> String {
     let image_reader = match image::io::Reader::open(path) {
         Ok(reader) => reader,
         Err(err) => {
@@ -268,11 +271,14 @@ fn rvs_render_image_to_ascii_BIP(path: &str) -> String {
             return "[图片：解码失败]".to_owned();
         }
     };
-    rvs_render_ascii_art_IP(&image)
+    rvs_render_ascii_art_BS(&image)
 }
 
 fn rvs_pick_display_name(info: &kovi::ApiReturn, fallback: &str) -> String {
-    let member = rvs_parse_group_member_info(&info.data).unwrap_or_default();
+    let member = match rvs_parse_group_member_info(&info.data) {
+        Some(m) => m,
+        None => return fallback.to_owned(),
+    };
     let card = member.card.trim();
     if !card.is_empty() {
         return card.to_owned();
@@ -289,21 +295,24 @@ fn rvs_pick_display_name(info: &kovi::ApiReturn, fallback: &str) -> String {
 /// # Panics
 ///
 /// Never panics in practice; the `P` suffix is inherited from downstream helpers.
-async fn rvs_render_at_mention_AIP(
+async fn rvs_render_at_mention_ABIS(
     qq: &str,
     group_id: Option<i64>,
     bot: &kovi::RuntimeBot,
 ) -> String {
     let name = if let Ok(user_id) = qq.parse::<i64>() {
         let member: Option<kovi::ApiReturn> = if let Some(gid) = group_id {
-            bot.get_group_member_info(gid, user_id, false).await.ok()
+            match bot.get_group_member_info(gid, user_id, false).await {
+                Ok(info) => Some(info),
+                Err(_) => None,
+            }
         } else {
             None
         };
         if let Some(ref info) = member {
             rvs_pick_display_name(info, qq)
         } else {
-            rvs_parse_stranger_info_from_api_AIP(bot, user_id).await
+            rvs_parse_stranger_info_from_api_ABIS(bot, user_id).await
         }
     } else {
         qq.to_owned()
@@ -313,7 +322,7 @@ async fn rvs_render_at_mention_AIP(
 
 /// Extracts a group sender display name from API info, combining title and card when both are present.
 pub fn rvs_extract_group_sender_name(info: &kovi::ApiReturn) -> Option<String> {
-    let member = rvs_parse_group_member_info(&info.data).unwrap_or_default();
+    let member = rvs_parse_group_member_info(&info.data)?;
     let title = member.title.trim();
     let card = member.card.trim();
     let nick = member.nickname.trim();
@@ -355,7 +364,7 @@ impl RenderedOnebotMessage {
     /// # Panics
     ///
     /// Panics if a group message event lacks `group_id` (never panics in practice).
-    pub async fn rvs_from_msg_event_ABIPS(
+    pub async fn rvs_from_msg_event_ABIS(
         value: &kovi::MsgEvent,
         bot: Arc<kovi::RuntimeBot>,
         image_mode: &ImageMode,
@@ -376,7 +385,7 @@ impl RenderedOnebotMessage {
             let sender_name =
                 rvs_pick_sender_name(&rvs_sanitize_nick(&raw_name), value.sender.user_id);
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_ABIPS(
+                &rvs_render_qq_array_message_ABIS(
                     &value.message,
                     Arc::clone(&bot),
                     None,
@@ -398,7 +407,7 @@ impl RenderedOnebotMessage {
                         value.message_type
                     );
                     let content = rvs_split_lines(
-                        &rvs_render_qq_array_message_ABIPS(
+                        &rvs_render_qq_array_message_ABIS(
                             &value.message,
                             Arc::clone(&bot),
                             None,
@@ -423,7 +432,7 @@ impl RenderedOnebotMessage {
             }
             .unwrap_or_else(|| value.sender.user_id.to_string());
             let content = rvs_split_lines(
-                &rvs_render_qq_array_message_ABIPS(
+                &rvs_render_qq_array_message_ABIS(
                     &value.message,
                     Arc::clone(&bot),
                     Some(gid),
@@ -447,7 +456,7 @@ mod tests {
     use super::*;
     use crate::onebot_types::EmojiInfo;
 
-    fn snapshot(name: &str, content: &str) {
+    fn rvs_snapshot_BIS(name: &str, content: &str) {
         let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
@@ -457,7 +466,7 @@ mod tests {
         let data = kovi::serde_json::json!({"text": "hello world"});
         let result = rvs_render_pure_segment(&HashMap::new(), "text", &data);
         assert_eq!(result, Some("hello world".to_owned()));
-        snapshot("20260418_render_pure_segment_text", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260418_render_pure_segment_text", &format!("{result:?}"));
     }
 
     #[test]
@@ -465,7 +474,7 @@ mod tests {
         let data = kovi::serde_json::json!({});
         let result = rvs_render_pure_segment(&HashMap::new(), "text", &data);
         assert_eq!(result, Some("".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_render_pure_segment_text_empty",
             &format!("{result:?}"),
         );
@@ -484,7 +493,7 @@ mod tests {
         );
         let result = rvs_render_pure_segment(&map, "face", &data);
         assert_eq!(result, Some("[微笑]".to_owned()));
-        snapshot("20260418_render_pure_segment_face", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260418_render_pure_segment_face", &format!("{result:?}"));
     }
 
     #[test]
@@ -500,7 +509,7 @@ mod tests {
         );
         let result = rvs_render_pure_segment(&map, "face", &data);
         assert_eq!(result, Some("[微笑]".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_render_pure_segment_face_integer_id",
             &format!("{result:?}"),
         );
@@ -511,7 +520,7 @@ mod tests {
         let data = kovi::serde_json::json!({"id": "999"});
         let result = rvs_render_pure_segment(&HashMap::new(), "face", &data);
         assert_eq!(result, Some("[999]".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_render_pure_segment_face_missing",
             &format!("{result:?}"),
         );
@@ -522,7 +531,7 @@ mod tests {
         let data = kovi::serde_json::json!({"file": "test.jpg"});
         let result = rvs_render_pure_segment(&HashMap::new(), "image", &data);
         assert!(result.is_none());
-        snapshot("20260418_render_pure_segment_image_returns_none", "None");
+        rvs_snapshot_BIS("20260418_render_pure_segment_image_returns_none", "None");
     }
 
     #[test]
@@ -530,7 +539,7 @@ mod tests {
         let data = kovi::serde_json::json!({"qq": "12345"});
         let result = rvs_render_pure_segment(&HashMap::new(), "at", &data);
         assert!(result.is_none());
-        snapshot("20260418_render_pure_segment_at_returns_none", "None");
+        rvs_snapshot_BIS("20260418_render_pure_segment_at_returns_none", "None");
     }
 
     #[test]
@@ -538,7 +547,7 @@ mod tests {
         let data = kovi::serde_json::json!({});
         let result = rvs_render_pure_segment(&HashMap::new(), "record", &data);
         assert_eq!(result, Some("[语音]".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_render_pure_segment_unknown",
             &format!("{result:?}"),
         );
@@ -558,7 +567,7 @@ mod tests {
         };
         let result = rvs_extract_group_sender_name(&info);
         assert_eq!(result, Some("Alice".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_extract_group_sender_name_with_card",
             &format!("{result:?}"),
         );
@@ -578,7 +587,7 @@ mod tests {
         };
         let result = rvs_extract_group_sender_name(&info);
         assert_eq!(result, Some("【管理员】Bob".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_extract_group_sender_name_with_title_and_card",
             &format!("{result:?}"),
         );
@@ -598,7 +607,7 @@ mod tests {
         };
         let result = rvs_extract_group_sender_name(&info);
         assert_eq!(result, Some("charlie".to_owned()));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_extract_group_sender_name_nickname_only",
             &format!("{result:?}"),
         );
@@ -618,7 +627,7 @@ mod tests {
         };
         let result = rvs_extract_group_sender_name(&info);
         assert!(result.is_none());
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_extract_group_sender_name_all_empty",
             &format!("{result:?}"),
         );
@@ -628,35 +637,35 @@ mod tests {
     fn test_20260528_pick_sender_name_nonempty() {
         let result = rvs_pick_sender_name("alice", 12345);
         assert_eq!(result, "alice");
-        snapshot("20260528_pick_sender_name_nonempty", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_pick_sender_name_nonempty", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_pick_sender_name_fallback() {
         let result = rvs_pick_sender_name("", 12345);
         assert_eq!(result, "12345");
-        snapshot("20260528_pick_sender_name_fallback", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_pick_sender_name_fallback", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_split_lines_single() {
         let result = rvs_split_lines("hello");
         assert_eq!(result, vec!["hello"]);
-        snapshot("20260528_split_lines_single", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_split_lines_single", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_split_lines_multiple() {
         let result = rvs_split_lines("hello\nworld\nfoo");
         assert_eq!(result, vec!["hello", "world", "foo"]);
-        snapshot("20260528_split_lines_multiple", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_split_lines_multiple", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_split_lines_empty() {
         let result = rvs_split_lines("");
         assert_eq!(result, vec![""]);
-        snapshot("20260528_split_lines_empty", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_split_lines_empty", &format!("{result:?}"));
     }
 
     #[test]
@@ -671,7 +680,7 @@ mod tests {
         );
         let result = rvs_lookup_emoji_name(&map, "123");
         assert_eq!(result, "smile");
-        snapshot("20260528_lookup_emoji_name_found", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_lookup_emoji_name_found", &format!("{result:?}"));
     }
 
     #[test]
@@ -679,7 +688,7 @@ mod tests {
         let map = HashMap::new();
         let result = rvs_lookup_emoji_name(&map, "456");
         assert_eq!(result, "456");
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_lookup_emoji_name_not_found",
             &format!("{result:?}"),
         );
@@ -695,7 +704,7 @@ mod tests {
         };
         let result = rvs_pick_display_name(&info, "fallback");
         assert_eq!(result, "CardName");
-        snapshot("20260528_pick_display_name_card", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_pick_display_name_card", &format!("{result:?}"));
     }
 
     #[test]
@@ -708,7 +717,7 @@ mod tests {
         };
         let result = rvs_pick_display_name(&info, "fallback");
         assert_eq!(result, "NickName");
-        snapshot("20260528_pick_display_name_nick", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_pick_display_name_nick", &format!("{result:?}"));
     }
 
     #[test]
@@ -721,7 +730,7 @@ mod tests {
         };
         let result = rvs_pick_display_name(&info, "fallback");
         assert_eq!(result, "fallback");
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_pick_display_name_fallback",
             &format!("{result:?}"),
         );
@@ -731,14 +740,14 @@ mod tests {
     fn test_20260528_reply_content_hint_normal() {
         let result = rvs_reply_content_hint("hello world this is a test");
         assert!(result.contains("hello"));
-        snapshot("20260528_reply_content_hint_normal", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_reply_content_hint_normal", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_reply_content_hint_empty() {
         let result = rvs_reply_content_hint("");
         assert_eq!(result, "...");
-        snapshot("20260528_reply_content_hint_empty", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_reply_content_hint_empty", &format!("{result:?}"));
     }
 
     #[test]
@@ -754,7 +763,7 @@ mod tests {
         assert_eq!(rvs_segment_display_name("poke"), "戳一戳");
         assert_eq!(rvs_segment_display_name("dice"), "骰子");
         assert_eq!(rvs_segment_display_name("rps"), "猜拳");
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_segment_display_name_known",
             "all known mappings verified",
         );
@@ -764,7 +773,7 @@ mod tests {
     fn test_20260604_segment_display_name_unknown() {
         assert_eq!(rvs_segment_display_name("custom_type"), "custom_type");
         assert_eq!(rvs_segment_display_name("something"), "something");
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_segment_display_name_unknown",
             "unknown types pass through unchanged",
         );

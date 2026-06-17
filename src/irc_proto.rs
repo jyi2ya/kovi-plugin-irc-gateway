@@ -196,6 +196,7 @@ pub fn rvs_build_welcome_burst(nick: &str, user: &str, now_str: &str) -> Vec<Mes
 }
 
 /// Extracts all ASCII digits from the input string.
+#[cfg(test)]
 pub fn rvs_extract_digits(value: &str) -> String {
     value.chars().filter(|c| c.is_ascii_digit()).collect()
 }
@@ -205,15 +206,14 @@ pub fn rvs_extract_channel_id(value: &str) -> Option<i64> {
     if value.is_empty() || !value.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    value.parse().ok()
+    match value.parse() {
+        Ok(n) => Some(n),
+        Err(_) => None,
+    }
 }
 
-#[expect(
-    clippy::allow_attributes,
-    reason = "dead_code needs #[allow] because tests use this function"
-)]
-#[allow(dead_code, reason = "utility function for parsing prefixed numbers")]
 /// Parses the first contiguous digit sequence from `value` into a numeric type `N`.
+#[cfg(test)]
 pub fn rvs_parse_prefix_number<N>(value: &str) -> Option<N>
 where
     N: std::str::FromStr,
@@ -223,7 +223,10 @@ where
     if digits.is_empty() {
         return None;
     }
-    digits.parse().ok()
+    match digits.parse() {
+        Ok(n) => Some(n),
+        Err(_) => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,12 +299,19 @@ pub fn rvs_build_cap_ls_reply() -> Vec<Message> {
 }
 
 /// Builds a CAP NAK reply rejecting the requested capabilities.
+#[expect(
+    clippy::manual_unwrap_or_default,
+    reason = "rivus forbids .unwrap_or_default() error swallowing"
+)]
 pub fn rvs_build_cap_nak_reply(requested: Option<String>) -> Vec<Message> {
     vec![rvs_server_msg(Command::CAP(
         Some("*".to_owned()),
         CapSubCommand::NAK,
         None,
-        Some(requested.unwrap_or_default()),
+        Some(match requested {
+            Some(s) => s,
+            None => String::new(),
+        }),
     ))]
 }
 
@@ -889,7 +899,7 @@ pub fn rvs_plan_irc_command(
 mod tests {
     use super::*;
 
-    fn snapshot(name: &str, content: &str) {
+    fn rvs_snapshot_BIS(name: &str, content: &str) {
         let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
@@ -897,14 +907,14 @@ mod tests {
     #[test]
     fn test_20260418_format_utc_timestamp_epoch() {
         let result = rvs_format_utc_timestamp(0);
-        snapshot("20260418_format_utc_timestamp_epoch", &result);
+        rvs_snapshot_BIS("20260418_format_utc_timestamp_epoch", &result);
         assert_eq!(result, "1970-01-01T00:00:00Z");
     }
 
     #[test]
     fn test_20260418_format_utc_timestamp_known_date() {
         let result = rvs_format_utc_timestamp(1700000000);
-        snapshot("20260418_format_utc_timestamp_known_date", &result);
+        rvs_snapshot_BIS("20260418_format_utc_timestamp_known_date", &result);
         assert!(result.starts_with("202"));
         assert!(result.contains("T"));
         assert!(result.ends_with("Z"));
@@ -914,14 +924,14 @@ mod tests {
     fn test_20260418_format_utc_timestamp_midnight() {
         let result = rvs_format_utc_timestamp(86400);
         assert_eq!(result, "1970-01-02T00:00:00Z");
-        snapshot("20260418_format_utc_timestamp_midnight", &result);
+        rvs_snapshot_BIS("20260418_format_utc_timestamp_midnight", &result);
     }
 
     #[test]
     fn test_20260418_format_utc_timestamp_leap_year() {
         let result = rvs_format_utc_timestamp(86400 * 59);
         assert!(result.contains("03-01") || result.contains("02-29") || result.contains("02-28"));
-        snapshot("20260418_format_utc_timestamp_leap_year", &result);
+        rvs_snapshot_BIS("20260418_format_utc_timestamp_leap_year", &result);
     }
 
     #[test]
@@ -932,7 +942,7 @@ mod tests {
         assert_eq!(r1, Some(12345));
         assert_eq!(r2, Some(12345));
         assert_eq!(r3, Some(123));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_parse_prefix_number_valid",
             &format!("{r1:?}, {r2:?}, {r3:?}"),
         );
@@ -946,7 +956,7 @@ mod tests {
         assert_eq!(r1, None);
         assert_eq!(r2, None);
         assert_eq!(r3, None);
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_parse_prefix_number_empty",
             &format!("{r1:?}, {r2:?}, {r3:?}"),
         );
@@ -956,7 +966,7 @@ mod tests {
     fn test_20260418_parse_prefix_number_overflow() {
         let result = rvs_parse_prefix_number::<u8>("999");
         assert_eq!(result, None);
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_parse_prefix_number_overflow",
             &format!("{result:?}"),
         );
@@ -965,14 +975,14 @@ mod tests {
     #[test]
     fn test_20260418_sanitize_nick_normal() {
         let result = rvs_sanitize_nick("hello world");
-        snapshot("20260418_sanitize_nick_normal", &result);
+        rvs_snapshot_BIS("20260418_sanitize_nick_normal", &result);
         assert_eq!(result, "helloworld");
     }
 
     #[test]
     fn test_20260418_sanitize_nick_with_punctuation() {
         let result = rvs_sanitize_nick("Alice!@# (test)");
-        snapshot("20260418_sanitize_nick_with_punctuation", &result);
+        rvs_snapshot_BIS("20260418_sanitize_nick_with_punctuation", &result);
         assert_eq!(result, "Alicetest");
     }
 
@@ -980,7 +990,7 @@ mod tests {
     fn test_20260418_sanitize_nick_all_whitespace() {
         let result = rvs_sanitize_nick("  \t\n  ");
         assert!(result.is_empty());
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_sanitize_nick_all_whitespace",
             &format!("{result:?}"),
         );
@@ -989,7 +999,7 @@ mod tests {
     #[test]
     fn test_20260418_sanitize_nick_chinese() {
         let result = rvs_sanitize_nick("张三 123");
-        snapshot("20260418_sanitize_nick_chinese", &result);
+        rvs_snapshot_BIS("20260418_sanitize_nick_chinese", &result);
         assert_eq!(result, "张三123");
     }
 
@@ -1004,7 +1014,7 @@ mod tests {
         assert_eq!(rvs_sanitize_nick("hello~world"), "hello~world");
         assert_eq!(rvs_sanitize_nick("a\\b"), "a\\b");
         assert_eq!(rvs_sanitize_nick("a!b@c#d"), "abcd");
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_sanitize_nick_preserves_irc_special",
             "all IRC special chars preserved",
         );
@@ -1019,56 +1029,56 @@ mod tests {
         assert!(!state.rvs_is_registered());
         state = RegistrationState::Registered;
         assert!(state.rvs_is_registered());
-        snapshot("20260418_registration_state", &format!("{state:?}"));
+        rvs_snapshot_BIS("20260418_registration_state", &format!("{state:?}"));
     }
 
     #[test]
     fn test_20260418_build_pong() {
         let msgs = rvs_build_pong("server1".to_owned(), Some("server2".to_owned()));
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_pong", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_pong", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_cap_ls_reply() {
         let msgs = rvs_build_cap_ls_reply();
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_cap_ls_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_cap_ls_reply", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_welcome_burst() {
         let msgs = rvs_build_welcome_burst("testnick", "testuser", "2024-01-01T00:00:00Z");
         assert!(!msgs.is_empty());
-        snapshot("20260418_build_welcome_burst", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_welcome_burst", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_motd_burst() {
         let msgs = rvs_build_motd_burst("testnick");
         assert_eq!(msgs.len(), 5);
-        snapshot("20260418_build_motd_burst", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_motd_burst", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_join_reply() {
         let msgs = rvs_build_join_reply("nick", "user", "#12345", "TestGroup");
         assert_eq!(msgs.len(), 4);
-        snapshot("20260418_build_join_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_join_reply", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_join_reply_private() {
         let msgs = rvs_build_join_reply("nick", "user", "##67890", "Alice");
         assert_eq!(msgs.len(), 4);
-        snapshot("20260418_build_join_reply_private", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_join_reply_private", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_away_replies_unset() {
         let msgs = rvs_build_away_replies("nick", None);
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_away_replies_unset", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_away_replies_unset", &format!("{:?}", msgs));
     }
 
     #[test]
@@ -1076,7 +1086,7 @@ mod tests {
         let away_msg = "brb".to_owned();
         let msgs = rvs_build_away_replies("nick", Some(&away_msg));
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_away_replies_set", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_away_replies_set", &format!("{:?}", msgs));
     }
 
     #[test]
@@ -1084,47 +1094,47 @@ mod tests {
         let nicks = vec!["alice".to_owned(), "bob".to_owned()];
         let msgs = rvs_build_userhost_reply("nick", &nicks);
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_userhost_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_userhost_reply", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_no_such_channel() {
         let msg = rvs_build_no_such_channel("nick", "#abc");
-        snapshot("20260418_build_no_such_channel", &format!("{:?}", msg));
+        rvs_snapshot_BIS("20260418_build_no_such_channel", &format!("{:?}", msg));
     }
 
     #[test]
     fn test_20260418_build_part_broadcast() {
         let msg = rvs_build_part_broadcast("nick", "user", "#12345", Some("bye".to_owned()));
-        snapshot("20260418_build_part_broadcast", &format!("{:?}", msg));
+        rvs_snapshot_BIS("20260418_build_part_broadcast", &format!("{:?}", msg));
     }
 
     #[test]
     fn test_20260418_build_whois_reply() {
         let msgs = rvs_build_whois_reply("nick", "user", "target");
         assert_eq!(msgs.len(), 3);
-        snapshot("20260418_build_whois_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_whois_reply", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_lusers_reply() {
         let msgs = rvs_build_lusers_reply("nick");
         assert_eq!(msgs.len(), 2);
-        snapshot("20260418_build_lusers_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_lusers_reply", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_version_reply() {
         let msgs = rvs_build_version_reply("nick");
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_version_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_version_reply", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_build_time_reply() {
         let msgs = rvs_build_time_reply("nick", "2024-06-15T12:30:00Z");
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_build_time_reply", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_build_time_reply", &format!("{:?}", msgs));
     }
 
     #[test]
@@ -1134,7 +1144,7 @@ mod tests {
         assert_eq!(rvs_extract_digits("12345"), "12345");
         assert_eq!(rvs_extract_digits("#12345"), "12345");
         assert_eq!(rvs_extract_digits("group123"), "123");
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_extract_digits",
             "empty, abc, 12345, #12345, group123",
         );
@@ -1155,14 +1165,14 @@ mod tests {
             rvs_extract_channel_id("12abc"),
             rvs_extract_channel_id("0"),
         );
-        snapshot("20260604_extract_channel_id", &result);
+        rvs_snapshot_BIS("20260604_extract_channel_id", &result);
     }
 
     #[test]
     fn test_20260418_resolve_privmsg_target_group() {
         let result = rvs_resolve_privmsg_target("#12345");
         assert_eq!(result, PrivmsgTarget::Group(12345));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_resolve_privmsg_target_group",
             &format!("{:?}", result),
         );
@@ -1172,7 +1182,7 @@ mod tests {
     fn test_20260418_resolve_privmsg_target_private_double_hash() {
         let result = rvs_resolve_privmsg_target("##67890");
         assert_eq!(result, PrivmsgTarget::Private(67890));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_resolve_privmsg_target_private_double_hash",
             &format!("{:?}", result),
         );
@@ -1182,7 +1192,7 @@ mod tests {
     fn test_20260418_resolve_privmsg_target_invalid() {
         let result = rvs_resolve_privmsg_target("#abc");
         assert!(matches!(result, PrivmsgTarget::Invalid(_)));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_resolve_privmsg_target_invalid",
             &format!("{:?}", result),
         );
@@ -1192,7 +1202,7 @@ mod tests {
     fn test_20260418_resolve_privmsg_target_invalid_no_hash() {
         let result = rvs_resolve_privmsg_target("nobody");
         assert!(matches!(result, PrivmsgTarget::Invalid(_)));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_resolve_privmsg_target_invalid_no_hash",
             &format!("{:?}", result),
         );
@@ -1202,7 +1212,7 @@ mod tests {
     fn test_20260418_resolve_privmsg_target_invalid_double_hash() {
         let result = rvs_resolve_privmsg_target("##abc");
         assert!(matches!(result, PrivmsgTarget::Invalid(_)));
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_resolve_privmsg_target_invalid_double_hash",
             &format!("{:?}", result),
         );
@@ -1212,21 +1222,21 @@ mod tests {
     fn test_20260418_handle_part_single() {
         let msgs = rvs_handle_part("nick", "user", "#12345", &None);
         assert_eq!(msgs.len(), 1);
-        snapshot("20260418_handle_part_single", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_handle_part_single", &format!("{:?}", msgs));
     }
 
     #[test]
     fn test_20260418_handle_part_multiple() {
         let msgs = rvs_handle_part("nick", "user", "#12345,#67890", &Some("bye".to_owned()));
         assert_eq!(msgs.len(), 2);
-        snapshot("20260418_handle_part_multiple", &format!("{:?}", msgs));
+        rvs_snapshot_BIS("20260418_handle_part_multiple", &format!("{:?}", msgs));
     }
 
-    fn pending(got_nick: bool, got_user: bool) -> RegistrationState {
+    fn rvs_pending(got_nick: bool, got_user: bool) -> RegistrationState {
         RegistrationState::Pending { got_nick, got_user }
     }
 
-    fn count_replies(effects: &[IrcCommandEffect]) -> usize {
+    fn rvs_count_replies(effects: &[IrcCommandEffect]) -> usize {
         effects
             .iter()
             .filter(|e| matches!(e, IrcCommandEffect::Reply(_)))
@@ -1239,12 +1249,12 @@ mod tests {
             &Command::PING("svr".to_owned(), None),
             "nick",
             "user",
-            &pending(false, false),
+            &rvs_pending(false, false),
             false,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 1);
-        snapshot("20260418_plan_ping", &format!("{:?}", effects));
+        assert_eq!(rvs_count_replies(&effects), 1);
+        rvs_snapshot_BIS("20260418_plan_ping", &format!("{:?}", effects));
     }
 
     #[test]
@@ -1253,17 +1263,17 @@ mod tests {
             &Command::NICK("mynick".to_owned()),
             "nick",
             "user",
-            &pending(false, false),
+            &rvs_pending(false, false),
             false,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 0);
+        assert_eq!(rvs_count_replies(&effects), 0);
         assert!(
             effects
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetNick(_)))
         );
-        snapshot("20260418_plan_nick_before_user", &format!("{:?}", effects));
+        rvs_snapshot_BIS("20260418_plan_nick_before_user", &format!("{:?}", effects));
     }
 
     #[test]
@@ -1272,11 +1282,11 @@ mod tests {
             &Command::NICK("mynick".to_owned()),
             "nick",
             "user",
-            &pending(false, true),
+            &rvs_pending(false, true),
             false,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 1);
+        assert_eq!(rvs_count_replies(&effects), 1);
         assert!(
             effects
                 .iter()
@@ -1287,7 +1297,7 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetNick(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_plan_nick_after_user_completes_registration",
             &format!("{:?}", effects),
         );
@@ -1299,12 +1309,12 @@ mod tests {
             &Command::NICK("mynick".to_owned()),
             "nick",
             "user",
-            &pending(false, true),
+            &rvs_pending(false, true),
             true,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 0);
-        snapshot(
+        assert_eq!(rvs_count_replies(&effects), 0);
+        rvs_snapshot_BIS(
             "20260418_plan_nick_blocked_by_cap",
             &format!("{:?}", effects),
         );
@@ -1316,17 +1326,17 @@ mod tests {
             &Command::USER("myuser".to_owned(), "0".to_owned(), "real".to_owned()),
             "nick",
             "user",
-            &pending(true, false),
+            &rvs_pending(true, false),
             false,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 1);
+        assert_eq!(rvs_count_replies(&effects), 1);
         assert!(
             effects
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_plan_user_after_nick_completes_registration",
             &format!("{:?}", effects),
         );
@@ -1338,17 +1348,17 @@ mod tests {
             &Command::CAP(None, CapSubCommand::END, None, None),
             "nick",
             "user",
-            &pending(true, true),
+            &rvs_pending(true, true),
             false,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 1);
+        assert_eq!(rvs_count_replies(&effects), 1);
         assert!(
             effects
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetRegState(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_plan_cap_end_completes_if_both_received",
             &format!("{:?}", effects),
         );
@@ -1360,17 +1370,17 @@ mod tests {
             &Command::CAP(None, CapSubCommand::END, None, None),
             "nick",
             "user",
-            &pending(false, true),
+            &rvs_pending(false, true),
             false,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 0);
+        assert_eq!(rvs_count_replies(&effects), 0);
         assert!(
             effects
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetCapNegotiating(false)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_plan_cap_end_noop_if_not_ready",
             &format!("{:?}", effects),
         );
@@ -1391,7 +1401,7 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_plan_join_returns_async_effect",
             &format!("{:?}", effects),
         );
@@ -1403,7 +1413,7 @@ mod tests {
             &Command::JOIN("#12345".to_owned(), None, None),
             "nick",
             "user",
-            &pending(false, false),
+            &rvs_pending(false, false),
             false,
             "",
         );
@@ -1417,7 +1427,7 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::AsyncJoin(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260418_plan_join_ignored_before_registration",
             &format!("{:?}", effects),
         );
@@ -1438,7 +1448,7 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SendPrivmsg { .. }))
         );
-        snapshot("20260418_plan_privmsg", &format!("{:?}", effects));
+        rvs_snapshot_BIS("20260418_plan_privmsg", &format!("{:?}", effects));
     }
 
     #[test]
@@ -1451,8 +1461,8 @@ mod tests {
             false,
             "",
         );
-        assert_eq!(count_replies(&effects), 1);
-        snapshot("20260418_plan_motd", &format!("{:?}", effects));
+        assert_eq!(rvs_count_replies(&effects), 1);
+        rvs_snapshot_BIS("20260418_plan_motd", &format!("{:?}", effects));
     }
 
     #[test]
@@ -1465,8 +1475,8 @@ mod tests {
             false,
             "2024-06-15T12:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 1);
-        snapshot("20260418_plan_time", &format!("{:?}", effects));
+        assert_eq!(rvs_count_replies(&effects), 1);
+        rvs_snapshot_BIS("20260418_plan_time", &format!("{:?}", effects));
     }
 
     #[test]
@@ -1484,8 +1494,8 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::SetNick(_)))
         );
-        assert_eq!(count_replies(&effects), 1);
-        snapshot(
+        assert_eq!(rvs_count_replies(&effects), 1);
+        rvs_snapshot_BIS(
             "20260418_plan_nick_change_when_registered",
             &format!("{:?}", effects),
         );
@@ -1506,12 +1516,12 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::LogDebug(_)))
         );
-        snapshot("20260418_plan_unknown_command", &format!("{:?}", effects));
+        rvs_snapshot_BIS("20260418_plan_unknown_command", &format!("{:?}", effects));
     }
 
     #[test]
     fn test_20260418_irssi_registration_flow() {
-        let mut state = pending(false, false);
+        let mut state = rvs_pending(false, false);
         let mut cap_neg = false;
 
         let effects = rvs_plan_irc_command(
@@ -1522,7 +1532,7 @@ mod tests {
             cap_neg,
             "",
         );
-        apply_effects(&effects, &mut state, &mut cap_neg);
+        rvs_apply_effects_M(&effects, &mut state, &mut cap_neg);
         assert!(cap_neg);
 
         let effects = rvs_plan_irc_command(
@@ -1533,7 +1543,7 @@ mod tests {
             cap_neg,
             "",
         );
-        apply_effects(&effects, &mut state, &mut cap_neg);
+        rvs_apply_effects_M(&effects, &mut state, &mut cap_neg);
         assert!(matches!(
             state,
             RegistrationState::Pending {
@@ -1550,7 +1560,7 @@ mod tests {
             cap_neg,
             "",
         );
-        apply_effects(&effects, &mut state, &mut cap_neg);
+        rvs_apply_effects_M(&effects, &mut state, &mut cap_neg);
         assert!(matches!(
             state,
             RegistrationState::Pending {
@@ -1567,15 +1577,15 @@ mod tests {
             cap_neg,
             "2024-01-01T00:00:00Z",
         );
-        assert_eq!(count_replies(&effects), 1);
+        assert_eq!(rvs_count_replies(&effects), 1);
         assert!(effects.iter().any(|e| matches!(
             e,
             IrcCommandEffect::SetRegState(RegistrationState::Registered)
         )));
-        snapshot("20260418_irssi_registration_flow", &format!("{effects:?}"));
+        rvs_snapshot_BIS("20260418_irssi_registration_flow", &format!("{effects:?}"));
     }
 
-    fn apply_effects(
+    fn rvs_apply_effects_M(
         effects: &[IrcCommandEffect],
         state: &mut RegistrationState,
         cap_neg: &mut bool,
@@ -1593,21 +1603,21 @@ mod tests {
     fn test_20260528_server_name() {
         let result = rvs_server_name();
         assert!(!result.is_empty());
-        snapshot("20260528_server_name", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_server_name", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_server_version() {
         let result = rvs_server_version();
         assert!(!result.is_empty());
-        snapshot("20260528_server_version", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_server_version", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_server_prefix() {
         let result = rvs_server_prefix();
         assert!(matches!(result, Prefix::ServerName(_)));
-        snapshot("20260528_server_prefix", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_server_prefix", &format!("{result:?}"));
     }
 
     #[test]
@@ -1615,14 +1625,14 @@ mod tests {
         let msg = Message::from(Command::PING("test".to_owned(), None));
         let result = rvs_prefixed(Prefix::ServerName("srv".to_owned()), msg);
         assert!(result.prefix.is_some());
-        snapshot("20260528_prefixed", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_prefixed", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_server_msg() {
         let result = rvs_server_msg(Command::PING("test".to_owned(), None));
         assert!(result.prefix.is_some());
-        snapshot("20260528_server_msg", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_server_msg", &format!("{result:?}"));
     }
 
     #[test]
@@ -1632,46 +1642,46 @@ mod tests {
             vec!["nick".to_owned(), "hi".to_owned()],
         );
         assert!(result.prefix.is_some());
-        snapshot("20260528_server_reply", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_server_reply", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_nick_prefix() {
         let result = rvs_nick_prefix("alice", "user1");
         assert!(matches!(result, Prefix::Nickname(_, _, _)));
-        snapshot("20260528_nick_prefix", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_nick_prefix", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_motd_start() {
         let result = rvs_build_motd_start("nick");
-        snapshot("20260528_build_motd_start", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_motd_start", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_motd_line() {
         let result = rvs_build_motd_line("nick", "Hello world");
-        snapshot("20260528_build_motd_line", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_motd_line", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_motd_end() {
         let result = rvs_build_motd_end("nick");
-        snapshot("20260528_build_motd_end", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_motd_end", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_cap_nak_reply() {
         let result = rvs_build_cap_nak_reply(Some("multi-prefix".to_owned()));
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_cap_nak_reply", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_cap_nak_reply", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_nick_change_broadcast() {
         let result = rvs_build_nick_change_broadcast("oldnick", "user1");
         assert_eq!(result.len(), 1);
-        snapshot(
+        rvs_snapshot_BIS(
             "20260528_build_nick_change_broadcast",
             &format!("{result:?}"),
         );
@@ -1681,77 +1691,77 @@ mod tests {
     fn test_20260528_build_who_end() {
         let result = rvs_build_who_end("nick", "*");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_who_end", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_who_end", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_whowas_end() {
         let result = rvs_build_whowas_end("nick", "someone");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_whowas_end", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_whowas_end", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_ison_reply() {
         let result = rvs_build_ison_reply("nick");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_ison_reply", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_ison_reply", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_channel_mode() {
         let result = rvs_build_channel_mode("nick", "#12345".to_owned());
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_channel_mode", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_channel_mode", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_no_topic() {
         let result = rvs_build_no_topic("nick", "#12345".to_owned());
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_no_topic", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_no_topic", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_names_end() {
         let result = rvs_build_names_end("nick", "#12345");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_names_end", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_names_end", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_list_end() {
         let result = rvs_build_list_end("nick");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_list_end", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_list_end", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_links_end() {
         let result = rvs_build_links_end("nick");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_links_end", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_links_end", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_admin_reply() {
         let result = rvs_build_admin_reply("nick");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_admin_reply", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_admin_reply", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260528_build_info_reply() {
         let result = rvs_build_info_reply("nick");
         assert_eq!(result.len(), 1);
-        snapshot("20260528_build_info_reply", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_build_info_reply", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260604_plan_part_private_extracts_peers() {
         let result = rvs_plan_part_private("##111,##222");
         assert_eq!(result, vec![111, 222]);
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_plan_part_private_extracts_peers",
             &format!("{result:?}"),
         );
@@ -1761,14 +1771,14 @@ mod tests {
     fn test_20260604_plan_part_private_mixed() {
         let result = rvs_plan_part_private("#111,##333");
         assert_eq!(result, vec![333]);
-        snapshot("20260604_plan_part_private_mixed", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260604_plan_part_private_mixed", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260604_plan_part_private_no_private() {
         let result = rvs_plan_part_private("#111,#222");
         assert!(result.is_empty());
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_plan_part_private_no_private",
             &format!("{result:?}"),
         );
@@ -1778,14 +1788,14 @@ mod tests {
     fn test_20260604_plan_part_private_empty() {
         let result = rvs_plan_part_private("");
         assert!(result.is_empty());
-        snapshot("20260604_plan_part_private_empty", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260604_plan_part_private_empty", &format!("{result:?}"));
     }
 
     #[test]
     fn test_20260604_plan_part_private_invalid_double_hash() {
         let result = rvs_plan_part_private("##abc");
         assert!(result.is_empty());
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_plan_part_private_invalid_double_hash",
             &format!("{result:?}"),
         );
@@ -1811,7 +1821,7 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::Reply(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_plan_part_generates_effect",
             &format!("{effects:?}"),
         );
@@ -1832,7 +1842,7 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, IrcCommandEffect::PartPrivate(_)))
         );
-        snapshot(
+        rvs_snapshot_BIS(
             "20260604_plan_part_no_effect_for_group_only",
             &format!("{effects:?}"),
         );
@@ -1843,7 +1853,7 @@ mod tests {
         let result = rvs_build_no_such_nick("nick", "target");
         let msg_str = result.to_string();
         assert!(msg_str.contains("401"));
-        snapshot("20260604_build_no_such_nick", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260604_build_no_such_nick", &format!("{result:?}"));
     }
 
     #[test]
@@ -1865,6 +1875,6 @@ mod tests {
             })
             .sum();
         assert_eq!(reply_count, 1);
-        snapshot("20260604_plan_quit", &format!("{effects:?}"));
+        rvs_snapshot_BIS("20260604_plan_quit", &format!("{effects:?}"));
     }
 }

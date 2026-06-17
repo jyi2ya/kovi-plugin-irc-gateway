@@ -21,7 +21,7 @@ use config::Config;
 /// # Panics
 ///
 /// Panics if the config file cannot be loaded or parsed.
-async fn rvs_plugin_main_ABIMPS() {
+async fn rvs_plugin_main_ABIS() {
     let bot = kovi::PluginBuilder::get_runtime_bot();
     let data_path = bot.get_data_path();
     let config_path = data_path.join("config.toml");
@@ -29,7 +29,7 @@ async fn rvs_plugin_main_ABIMPS() {
         .expect("never: config is valid TOML with defaults");
 
     let broadcast_tx = kovi::tokio::sync::broadcast::Sender::new(16);
-    let _irc = kovi::spawn(server::rvs_irc_server_main_ABIMPS(
+    let _irc = kovi::spawn(server::rvs_irc_server_main_ABIS(
         config.bind_addr,
         config.user_options,
         Default::default(),
@@ -46,7 +46,7 @@ async fn rvs_plugin_main_ABIMPS() {
         let bot = Arc::clone(&bot);
         let image_mode = config.clone();
         async move {
-            let rendered = onebot::RenderedOnebotMessage::rvs_from_msg_event_ABIPS(
+            let rendered = onebot::RenderedOnebotMessage::rvs_from_msg_event_ABIS(
                 event.as_ref(),
                 bot,
                 &image_mode,

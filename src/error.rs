@@ -26,7 +26,7 @@ impl IrcGatewayError {
 mod tests {
     use super::*;
 
-    fn snapshot(name: &str, content: &str) {
+    fn rvs_snapshot_BIS(name: &str, content: &str) {
         let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
@@ -38,6 +38,6 @@ mod tests {
             "reset",
         ));
         assert!(matches!(result, IrcGatewayError::ConnectionBroken(_)));
-        snapshot("20260528_connection_broken", &format!("{result:?}"));
+        rvs_snapshot_BIS("20260528_connection_broken", &format!("{result:?}"));
     }
 }
