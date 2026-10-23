@@ -9,6 +9,7 @@ mod server;
 use std::sync::Arc;
 
 use config::Config;
+use kovi_onebot::EventRegistrar;
 
 #[kovi::plugin]
 /// Entry point for the kovi plugin: loads config and starts the IRC gateway.
@@ -35,7 +36,7 @@ async fn plugin_main() {
     let broadcast_tx = Arc::new(broadcast_tx);
     let config = Arc::new(config.image_mode.clone());
 
-    kovi::PluginBuilder::on_msg(move |event: Arc<kovi::MsgEvent>| {
+    kovi::PluginBuilder::on_msg(move |event: Arc<kovi_onebot::MsgEvent>| {
         let broadcast_tx: Arc<kovi::tokio::sync::broadcast::Sender<onebot::RenderedOnebotMessage>> =
             Arc::clone(&broadcast_tx);
         let bot = Arc::clone(&bot);

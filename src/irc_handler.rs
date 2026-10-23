@@ -5,6 +5,7 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use irc_proto::{Command, Message};
 use kovi::tokio::sync::Mutex;
 use kovi::{log, tokio};
+use kovi_onebot::OnebotTrait;
 use tokio_util::codec::Decoder;
 
 use crate::error::IrcGatewayError;

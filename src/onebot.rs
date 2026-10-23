@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use kovi::log;
+use kovi_onebot::OnebotTrait;
 
 use crate::config::ImageMode;
 use crate::irc_proto::sanitize_nick;
@@ -90,18 +91,18 @@ pub async fn render_qq_array_message(
     stream::iter(messages.iter().cloned())
         .map(async |segment| {
             if let Some(rendered) =
-                render_pure_segment(&QQ_EMOJI_INFO, &segment.type_, &segment.data)
+                render_pure_segment(&QQ_EMOJI_INFO, &segment.kind, &segment.data)
             {
                 return rendered;
             }
-            match segment.type_.as_str() {
+            match segment.kind.as_str() {
                 "image" => render_image_segment(&segment, &bot, image_mode).await,
                 "reply" => render_reply_segment(&segment, group_id, &bot).await,
                 "at" => {
                     let at_data = parse_at_data(&segment.data);
                     render_at_mention(&at_data.qq, group_id, &bot).await
                 }
-                _ => format!("[{}]", segment_display_name(&segment.type_)),
+                _ => format!("[{}]", segment_display_name(&segment.kind)),
             }
         })
         .buffered(16)
@@ -116,7 +117,7 @@ pub async fn render_qq_array_message(
 ///
 /// Never panics in practice.
 async fn render_reply_segment(
-    segment: &kovi::bot::message::Segment,
+    segment: &kovi::Segment,
     group_id: Option<i64>,
     bot: &kovi::RuntimeBot,
 ) -> String {
@@ -183,7 +184,7 @@ fn reply_content_hint(raw_message: &str) -> String {
 ///
 /// Never panics in practice.
 async fn render_image_segment(
-    segment: &kovi::bot::message::Segment,
+    segment: &kovi::Segment,
     bot: &kovi::RuntimeBot,
     image_mode: &ImageMode,
 ) -> String {
@@ -361,7 +362,7 @@ impl RenderedOnebotMessage {
     ///
     /// Panics if a group message event lacks `group_id` (never panics in practice).
     pub async fn from_msg_event(
-        value: &kovi::MsgEvent,
+        value: &kovi_onebot::MsgEvent,
         bot: Arc<kovi::RuntimeBot>,
         image_mode: &ImageMode,
     ) -> Self {
@@ -547,7 +548,7 @@ mod tests {
                 "nickname": "alice_nick",
                 "title": ""
             }),
-            echo: String::new(),
+            message: None,
         };
         let result = extract_group_sender_name(&info);
         assert_eq!(result, Some("Alice".to_owned()));
@@ -567,7 +568,7 @@ mod tests {
                 "nickname": "bob_nick",
                 "title": "管理员"
             }),
-            echo: String::new(),
+            message: None,
         };
         let result = extract_group_sender_name(&info);
         assert_eq!(result, Some("【管理员】Bob".to_owned()));
@@ -587,7 +588,7 @@ mod tests {
                 "nickname": "charlie",
                 "title": ""
             }),
-            echo: String::new(),
+            message: None,
         };
         let result = extract_group_sender_name(&info);
         assert_eq!(result, Some("charlie".to_owned()));
@@ -607,7 +608,7 @@ mod tests {
                 "nickname": "",
                 "title": ""
             }),
-            echo: String::new(),
+            message: None,
         };
         let result = extract_group_sender_name(&info);
         assert!(result.is_none());
@@ -684,7 +685,7 @@ mod tests {
             status: "ok".to_owned(),
             retcode: 0,
             data: kovi::serde_json::json!({"card": "CardName", "nickname": "NickName"}),
-            echo: String::new(),
+            message: None,
         };
         let result = pick_display_name(&info, "fallback");
         assert_eq!(result, "CardName");
@@ -697,7 +698,7 @@ mod tests {
             status: "ok".to_owned(),
             retcode: 0,
             data: kovi::serde_json::json!({"nickname": "NickName"}),
-            echo: String::new(),
+            message: None,
         };
         let result = pick_display_name(&info, "fallback");
         assert_eq!(result, "NickName");
@@ -710,7 +711,7 @@ mod tests {
             status: "ok".to_owned(),
             retcode: 0,
             data: kovi::serde_json::json!({}),
-            echo: String::new(),
+            message: None,
         };
         let result = pick_display_name(&info, "fallback");
         assert_eq!(result, "fallback");
