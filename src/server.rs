@@ -4,7 +4,7 @@ use kovi::log;
 use kovi::tokio::sync::broadcast;
 use tokio_listener::{Listener, ListenerAddress, SystemOptions, UserOptions};
 
-use crate::irc_handler::rvs_handle_irc_connection_ABIS;
+use crate::irc_handler::handle_irc_connection;
 use crate::onebot::RenderedOnebotMessage;
 
 /// Runs the IRC server, accepting connections and spawning handlers for each.
@@ -12,7 +12,7 @@ use crate::onebot::RenderedOnebotMessage;
 /// # Panics
 ///
 /// Panics if spawning a connection handler fails.
-pub async fn rvs_irc_server_main_ABIS(
+pub async fn irc_server_main(
     bind_addr: ListenerAddress,
     user_options: UserOptions,
     system_options: SystemOptions,
@@ -32,7 +32,7 @@ pub async fn rvs_irc_server_main_ABIS(
                 log::info!("incoming IRC connection from {addr}");
                 let rx = broadcast_tx.subscribe();
                 let bot = Arc::clone(&bot);
-                kovi::spawn(rvs_handle_irc_connection_ABIS(conn, rx, bot));
+                kovi::spawn(handle_irc_connection(conn, rx, bot));
             }
             Err(e) => {
                 log::warn!("accept error: {e}");

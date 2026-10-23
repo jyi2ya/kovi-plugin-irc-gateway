@@ -1,8 +1,3 @@
-#![expect(
-    non_snake_case,
-    reason = "rvs_ functions use uppercase capability suffixes (A/B/I/M/P/S/T/U)"
-)]
-
 mod config;
 mod error;
 mod irc_handler;
@@ -21,7 +16,7 @@ use config::Config;
 /// # Panics
 ///
 /// Panics if the config file cannot be loaded or parsed.
-async fn rvs_plugin_main_ABIS() {
+async fn plugin_main() {
     let bot = kovi::PluginBuilder::get_runtime_bot();
     let data_path = bot.get_data_path();
     let config_path = data_path.join("config.toml");
@@ -29,7 +24,7 @@ async fn rvs_plugin_main_ABIS() {
         .expect("never: config is valid TOML with defaults");
 
     let broadcast_tx = kovi::tokio::sync::broadcast::Sender::new(16);
-    let _irc = kovi::spawn(server::rvs_irc_server_main_ABIS(
+    let _irc = kovi::spawn(server::irc_server_main(
         config.bind_addr,
         config.user_options,
         Default::default(),
@@ -46,12 +41,9 @@ async fn rvs_plugin_main_ABIS() {
         let bot = Arc::clone(&bot);
         let image_mode = config.clone();
         async move {
-            let rendered = onebot::RenderedOnebotMessage::rvs_from_msg_event_ABIS(
-                event.as_ref(),
-                bot,
-                &image_mode,
-            )
-            .await;
+            let rendered =
+                onebot::RenderedOnebotMessage::from_msg_event(event.as_ref(), bot, &image_mode)
+                    .await;
             drop(broadcast_tx.send(rendered));
         }
     })

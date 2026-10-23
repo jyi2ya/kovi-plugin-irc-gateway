@@ -13,7 +13,7 @@ pub enum IrcGatewayError {
 
 impl IrcGatewayError {
     /// Constructs a `ConnectionBroken` error wrapping the underlying cause.
-    pub fn rvs_connection_broken<E>(e: E) -> Self
+    pub fn connection_broken<E>(e: E) -> Self
     where
         E: std::error::Error + Send + Sync + 'static,
     {
@@ -26,18 +26,18 @@ impl IrcGatewayError {
 mod tests {
     use super::*;
 
-    fn rvs_snapshot_BIS(name: &str, content: &str) {
+    fn snapshot(name: &str, content: &str) {
         let path = format!("test_out/test_{}.out", name);
         std::fs::write(&path, content).unwrap();
     }
 
     #[test]
     fn test_20260528_connection_broken() {
-        let result = IrcGatewayError::rvs_connection_broken(std::io::Error::new(
+        let result = IrcGatewayError::connection_broken(std::io::Error::new(
             std::io::ErrorKind::ConnectionReset,
             "reset",
         ));
         assert!(matches!(result, IrcGatewayError::ConnectionBroken(_)));
-        rvs_snapshot_BIS("20260528_connection_broken", &format!("{result:?}"));
+        snapshot("20260528_connection_broken", &format!("{result:?}"));
     }
 }
