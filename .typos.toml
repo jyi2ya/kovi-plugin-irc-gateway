@@ -1,0 +1,3 @@
+[default.extend-words]
+# IRC numeric 323 "List End" (irc-proto crate's Response::RPL_LISTEND).
+LISTEND = "LISTEND"

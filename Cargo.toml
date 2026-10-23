@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4"
 futures = "0.3.31"
 image = { version = "=0.24.6", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "webp", "png", "pnm", "tiff"] }
 irc-proto = "1.1.0"

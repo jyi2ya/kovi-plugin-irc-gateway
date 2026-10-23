@@ -3,9 +3,8 @@ use std::sync::Arc;
 
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use irc_proto::{Command, Message};
-use kovi::log;
-use kovi::tokio;
 use kovi::tokio::sync::Mutex;
+use kovi::{log, tokio};
 use tokio_util::codec::Decoder;
 
 use crate::error::IrcGatewayError;
@@ -213,9 +212,7 @@ async fn execute_irc_effects(
             IrcCommandEffect::PartPrivate(peer_ids) => {
                 if !peer_ids.is_empty() {
                     let mut set = joined_private_channels.lock().await;
-                    for id in &peer_ids {
-                        set.remove(id);
-                    }
+                    set.retain(|id| !peer_ids.contains(id));
                 }
             }
             IrcCommandEffect::Quit => should_quit = true,
@@ -498,30 +495,44 @@ pub async fn handle_irc_connection(
         Arc::new(Mutex::new((String::new(), String::new())));
     let joined_private_channels: Arc<Mutex<HashSet<i64>>> = Arc::new(Mutex::new(HashSet::new()));
 
-    tokio::select! {
-        result = handle_irc_messages(
-            irc_rx,
-            irc_tx.clone(),
-            Arc::clone(&bot),
-            Arc::clone(&shared_nick_user),
-            Arc::clone(&joined_private_channels),
-        ) => {
-            if let Err(e) = result {
+    // Race the two handler loops; the first one to return ends the connection.
+    // Both loops only suspend at message boundaries (broadcast `recv` /
+    // `StreamExt::next`), so cancelling the loser never drops a half-read
+    // message. Each block logs its own failure, so the select result carries
+    // nothing we need; dropping it cancels the still-pending loop.
+    let irc_loop = {
+        let irc_tx = Arc::clone(&irc_tx);
+        let bot = Arc::clone(&bot);
+        let shared_nick_user = Arc::clone(&shared_nick_user);
+        let joined_private_channels = Arc::clone(&joined_private_channels);
+        async move {
+            if let Err(e) = handle_irc_messages(
+                irc_rx,
+                irc_tx,
+                bot,
+                shared_nick_user,
+                joined_private_channels,
+            )
+            .await
+            {
                 log::warn!("irc message handler error: {e}");
             }
         }
-        result = handle_onebot_messages(
+    };
+    let onebot_loop = async move {
+        if let Err(e) = handle_onebot_messages(
             onebot_rx,
             irc_tx,
             shared_nick_user,
             bot,
             joined_private_channels,
-        ) => {
-            if let Err(e) = result {
-                log::warn!("onebot message handler error: {e}");
-            }
+        )
+        .await
+        {
+            log::warn!("onebot message handler error: {e}");
         }
-    }
+    };
+    drop(futures::future::select(Box::pin(irc_loop), Box::pin(onebot_loop)).await);
 
     log::info!("irc connection closed");
 }
@@ -586,7 +597,7 @@ mod tests {
         assert_eq!(
             channels[0],
             ParsedChannel::Invalid {
-                raw: "#abc".to_owned(),
+                raw: "#abc".to_owned()
             }
         );
         assert_eq!(
@@ -626,7 +637,7 @@ mod tests {
         assert_eq!(
             channels[0],
             ParsedChannel::Invalid {
-                raw: "##abc".to_owned(),
+                raw: "##abc".to_owned()
             }
         );
         snapshot(
@@ -649,13 +660,13 @@ mod tests {
         assert_eq!(
             channels[0],
             ParsedChannel::Invalid {
-                raw: "#12a34".to_owned(),
+                raw: "#12a34".to_owned()
             }
         );
         assert_eq!(
             channels[1],
             ParsedChannel::Invalid {
-                raw: "##56b78".to_owned(),
+                raw: "##56b78".to_owned()
             }
         );
         snapshot(
@@ -671,7 +682,7 @@ mod tests {
         assert_eq!(
             channels[0],
             ParsedChannel::Invalid {
-                raw: "12345".to_owned(),
+                raw: "12345".to_owned()
             }
         );
         snapshot(

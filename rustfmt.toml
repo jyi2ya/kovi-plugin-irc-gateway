@@ -1,0 +1,2 @@
+# This repository deliberately uses plain rustfmt defaults (community standard style).
+# Check with: perl scripts/rl.pl check --fmt-style standard

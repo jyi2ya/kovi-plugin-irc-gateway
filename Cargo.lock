@@ -888,6 +888,7 @@ dependencies = [
 name = "kovi-plugin-irc-gateway"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "futures",
  "image",
  "irc-proto",

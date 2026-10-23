@@ -84,64 +84,23 @@ pub fn build_motd_end(nick: &str) -> Message {
 ///
 /// # Panics
 ///
-/// Never panics in practice; integer arithmetic is used throughout.
+/// Never panics in practice; `secs` is bounded by [`debug_assert!`] to years before 9999,
+/// which chrono can always represent.
 pub fn format_utc_timestamp(secs: u64) -> String {
     debug_assert!(secs < 253402300800, "timestamp exceeds year 9999");
-    let s = secs % 60;
-    let m = (secs / 60) % 60;
-    let h = (secs / 3600) % 24;
-    let days = secs / 86400;
-    let mut year = 1970u64;
-    let mut remaining_days = days;
-    loop {
-        let days_in_year =
-            if year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400)) {
-                366
-            } else {
-                365
-            };
-        if remaining_days < days_in_year {
-            break;
-        }
-        remaining_days -= days_in_year;
-        year += 1;
-    }
-    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
-    let month_days: [u64; 12] = [
-        31,
-        if leap { 29 } else { 28 },
-        31,
-        30,
-        31,
-        30,
-        31,
-        31,
-        30,
-        31,
-        30,
-        31,
-    ];
-    let mut month = 1u64;
-    for &md in &month_days {
-        if remaining_days < md {
-            break;
-        }
-        remaining_days -= md;
-        month += 1;
-    }
-    let day = remaining_days + 1;
-    format!("{year:04}-{month:02}-{day:02}T{h:02}:{m:02}:{s:02}Z")
+    let secs = i64::try_from(secs).expect("never: secs < 253402300800 fits in i64");
+    chrono::DateTime::from_timestamp(secs, 0)
+        .expect("never: years before 9999 are always representable by chrono")
+        .format("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 /// Returns the current UTC time as seconds since the Unix epoch.
 ///
 /// Reads the system clock (side effect).
 pub fn current_utc_secs() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+    u64::try_from(chrono::Utc::now().timestamp())
+        .expect("never: current time is after the Unix epoch")
 }
 
 /// Builds the full registration welcome burst (001-005, ISUPPORT, MOTD).
